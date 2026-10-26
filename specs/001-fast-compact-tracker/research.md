@@ -28,6 +28,8 @@ CTO, 2026-10-25. Upstream facts are from `plan-draft.md` section 1 (v1.3.1 = `c1
 
 ## R5. Migration source (W8)
 
+- **Superseded in part (2026-10-26)** by [ADR 0003](../../docs/decisions/0003-migration-extract-via-dolt-cli.md): history, events and tables bd cannot read now come from one pinned Dolt CLI batch on the copy; `bd export` and `bd config list` stay. The text below is the original plan.
+
 - **Decision**: read the Dolt store only through upstream bd 1.3.1 as a subprocess, on a copy: `bd export` (issues, comments, deps, labels, metadata), `bd export --events`, `bd config list --json` (prefix, custom statuses/types), `bd history <id> --json` per bead (seeds `lite_issue_versions`). Write a new `.beads/beads.db`; never touch `embeddeddolt/`. History is read before the freeze on N parallel copies; at the freeze, only beads whose `updated_at` moved since are re-read.
 - **Rationale**: `bd sql` is refused in embedded mode (measured: `'bd sql' is not yet supported in embedded mode`), no Dolt CLI is installed, and the fork has no CGO, so it cannot open embedded Dolt itself. Supported commands are the only reader we have. The freeze window must stay short: a fresh upstream `bd init` took 5 min 57 s and one `bd sql` call 62 s to fail (measured), so anything per bead runs before the freeze.
 - **Alternatives**: July's table copier `2c0eb87bc` (needs a CGO build: no C compiler); install the Dolt CLI for one query on `dolt_diff_issues` (faster, but a new install; keep as fallback if W8's measurement shows per-bead history too slow: owner/SRE decision).
