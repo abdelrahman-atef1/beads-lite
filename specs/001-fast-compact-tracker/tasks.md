@@ -86,8 +86,8 @@ T004, T006, T007, T012, T014, T019, T022, T023, T032, T038. Already running: T00
 
 **Goal**: FR-016, SC-011. **Independent test**: quickstart 9.
 
-- [ ] T034 [US7] (ux; owns `E:/Projects/beads-lite-ui/design/`, branch `redesign`) Stitch design covering every FR-010 column and action, wide and narrow windows, Arabic and English titles (RTL-safe), empty/loading/error states, owner_decision on the first screen. *In progress.*
-- [ ] T035 [US7] (owner, card filed by CoS) approve the design; record the approval quoted and dated on the bead. Blocked by T034.
+- [x] T034 [US7] (ux; owns `E:/Projects/beads-lite-ui/design/`, branch `redesign`) Stitch design covering every FR-010 column and action, wide and narrow windows, Arabic and English titles (RTL-safe), empty/loading/error states, owner_decision on the first screen. *Done 2026-10-25 as an HTML mockup + `tokens.css` + `design/README.md` on beads-lite-ui `redesign` (a2e3861); Stitch dropped by owner decision.*
+- [x] T035 [US7] (owner, card filed by CoS) approve the design; record the approval quoted and dated on the bead. Blocked by T034. *Done 2026-10-25 by owner decision: «مش محتاج Stitch، نموذج HTML ده كفاية» (recorded in `design/README.md` section 1).*
 - [ ] T036 [US7] (swe J; owns `E:/Projects/beads-lite-ui/app/`) W15: client from the approved design on T032's data layer; link `#/issues?issue=<id>` opens the bead; each owner action (view, status, assignee, comment) in no more clicks than today. Blocked by T035, T032.
 - [ ] T037 [US7] (ux + qa) UX sign-off built vs design; QA click count and SC-002/SC-003 re-run. Blocked by T036.
 
@@ -108,7 +108,7 @@ T004, T006, T007, T012, T014, T019, T022, T023, T032, T038. Already running: T00
 ## Final phase: Polish and cross-cutting
 
 - [ ] T042 (sec + legal, once) clean-up pass after T031: loopback-only board, migration tool, freeze, no telemetry; LICENSE (MIT) + THIRD_PARTY_LICENSES with modernc (BSD-3). Findings are suggestions (company rule).
-- [ ] T043 [P] (cto; owns `docs/decisions/`) ADR 0002 upstream-merge policy: pin v1.3.1, merge only by decision, `// lite:` marker rules, review of our diff size.
+- [x] T043 [P] (cto; owns `docs/decisions/`) ADR 0002 upstream-merge policy: pin v1.3.1, merge only by decision, `// lite:` marker rules, review of our diff size.
 
 ---
 
