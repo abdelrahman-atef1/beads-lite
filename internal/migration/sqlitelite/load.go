@@ -231,7 +231,7 @@ func issueColumns(raw map[string]json.RawMessage, valid map[string]bool) (map[st
 		}
 		cols[c] = jsonToSQL(c, v)
 	}
-	for _, c := range []string{"description", "design", "acceptance_criteria", "notes"} {
+	for _, c := range []string{"title", "description", "design", "acceptance_criteria", "notes"} {
 		if _, ok := cols[c]; !ok {
 			cols[c] = ""
 		}

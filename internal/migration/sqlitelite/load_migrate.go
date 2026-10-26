@@ -52,6 +52,7 @@ type MigrateReport struct {
 	Accepted  []string          `json:"accepted_uncovered,omitempty"`
 	Load      *LoadReport       `json:"load,omitempty"`
 	Verify    *VerifyReport     `json:"verify,omitempty"`
+	Notes     []string          `json:"notes,omitempty"`
 	TotalMs   int64             `json:"total_ms"`
 }
 
@@ -83,6 +84,9 @@ func (m *MigrateReport) Text() string {
 		if n > 20 {
 			fmt.Fprintf(&b, "\n  ... %d more", n-20)
 		}
+	}
+	for _, n := range m.Notes {
+		fmt.Fprintf(&b, "\nnote: %s", n)
 	}
 	if len(m.Accepted) > 0 {
 		fmt.Fprintf(&b, "\naccepted uncovered: %s", strings.Join(m.Accepted, ", "))
@@ -124,6 +128,13 @@ func Migrate(ctx context.Context, o MigrateOptions) (*MigrateReport, error) {
 			in.Tables[k] = v
 			covered = append(covered, k)
 		}
+	}
+	if _, own := in.Tables["leases"]; !own {
+		// bd 1.3.1 has no reader for the leases table, but the export carries
+		// lease_expires_at / heartbeat_at / lease_granted_node per issue and
+		// the loader rebuilds a lease row from them (holder = assignee).
+		covered = append(covered, "leases")
+		rep.Notes = append(rep.Notes, "leases rebuilt from export lease fields (holder = assignee, granted_at = heartbeat_at)")
 	}
 	if err := CheckUncovered(res, covered); err != nil {
 		return rep, err

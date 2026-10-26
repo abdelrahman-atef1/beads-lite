@@ -238,6 +238,9 @@ func verifyBead(ctx context.Context, db *sql.DB, id string, raw map[string]json.
 		name string
 		got  sql.NullString
 	}{{"title", title}, {"description", desc}, {"design", design}, {"acceptance_criteria", accept}, {"notes", notes}, {"status", status}} {
+		if _, present := raw[c.name]; c.name == "status" && !present {
+			continue // absent in the export: the column default applies
+		}
 		if want := rawString(raw[c.name]); c.got.String != want {
 			bad("%s differs (%d bytes expected, %d found)", c.name, len(want), len(c.got.String))
 		}
