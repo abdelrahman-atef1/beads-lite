@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/beads/internal/metrics"
 	"github.com/steveyegge/beads/internal/storage"
+	"github.com/steveyegge/beads/internal/lite/compact"
 	"github.com/steveyegge/beads/internal/types"
 	"github.com/steveyegge/beads/internal/ui"
 	"github.com/steveyegge/beads/internal/workapi"
@@ -335,6 +336,13 @@ func runListCore(cmd *cobra.Command, _ []string) error {
 		if err := outputFormattedList(out, issues, depsByIssueID, in.formatStr); err != nil {
 			return HandleError("%v", err)
 		}
+		printTruncationHint(truncated, in.effectiveLimit)
+		return nil
+	}
+
+	// lite: compact text (<= 50 lines incl. hint); --full or --long = upstream text.
+	if liteCompactText(in.longFormat) {
+		fmt.Print(compact.List(issues, len(issues)))
 		printTruncationHint(truncated, in.effectiveLimit)
 		return nil
 	}

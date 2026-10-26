@@ -121,10 +121,13 @@ func TestRunInTxHooksAndRollback(t *testing.T) {
 	if err := s.RunInTx(ctx, ins); err != nil || hookRan != 1 {
 		t.Fatalf("err=%v hook=%d", err, hookRan)
 	}
-	var touched int
+	// The trigger recorded the row and the history hook (on by default since
+	// T011) turned it into a version and emptied lite_touched.
+	var touched, versions int
 	_ = s.DB().QueryRow("SELECT count(*) FROM lite_touched").Scan(&touched)
-	if touched != 1 {
-		t.Fatalf("trigger did not record touched row: %d", touched)
+	_ = s.DB().QueryRow("SELECT count(*) FROM lite_issue_versions WHERE issue_id='t-1'").Scan(&versions)
+	if touched != 0 || versions != 1 {
+		t.Fatalf("touched=%d versions=%d, want 0 and 1", touched, versions)
 	}
 	// A failing hook rolls the whole write back.
 	s.RegisterBeforeCommit(func(ctx context.Context, tx *sql.Tx) error { return os.ErrInvalid })

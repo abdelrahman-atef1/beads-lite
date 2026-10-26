@@ -17,6 +17,9 @@ import (
 var commentedMetricsRe = regexp.MustCompile(`(?m)^\s*#\s*metrics\s*:`)
 
 func EnsureUserConfigDefaults() error {
+	if !CompiledIn() {
+		return nil // lite: metrics compiled off, nothing to seed
+	}
 	path, err := config.UserConfigYamlPath()
 	if err != nil {
 		return fmt.Errorf("ensure user config: %w", err)

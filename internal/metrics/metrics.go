@@ -18,8 +18,6 @@ const (
 	EnvDisableEventFlush = "BD_DISABLE_EVENT_FLUSH"
 	EnvDoNotTrack        = "DO_NOT_TRACK"
 
-	DefaultEndpoint = "https://gastownhall-eventsapi.com/mp/collect"
-
 	// queuedEventExt is the extension the eventkit FileEmitter gives queued
 	// event batches in DataDir. Re-exported here (this file holds the fenced
 	// eventkit import — see computeMachineID) so spawn.go's pending-events
@@ -27,10 +25,19 @@ const (
 	queuedEventExt = eventkit.DefaultFileExt
 )
 
+// DefaultEndpoint is empty in beads-lite: metrics are compiled off (T011, W5).
+// No event is queued, written or sent, and no flusher child is spawned.
+// Setting the upstream URL re-enables the whole path. It is a var only so this
+// package's tests can switch the path on; production code never assigns it.
+var DefaultEndpoint = ""
+
 var (
 	enabled  bool
 	endpoint string
 )
+
+// CompiledIn reports whether this build can emit metrics at all.
+func CompiledIn() bool { return DefaultEndpoint != "" }
 
 func Enabled() bool {
 	return enabled
@@ -49,7 +56,7 @@ func DataDir() (string, error) {
 }
 
 func Init(version string, enable bool, metricsEndpoint string) (func(context.Context), error) {
-	enabled = enable
+	enabled = enable && CompiledIn()
 	endpoint = metricsEndpoint
 	if endpoint == "" {
 		endpoint = DefaultEndpoint
