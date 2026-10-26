@@ -28,3 +28,13 @@ Normalisation (and nothing else): timestamps to the second; ids minted during th
 Outside the surface: a command that needs Dolt (`vc`, `branch`, `diff`, `federation`, ...) fails with "not supported in beads-lite", a pointer to this list, and a non-zero exit (FR-014). Never silent wrong output.
 
 Text output (not JSON): `show` <= 8 KB and `list` <= 50 lines by default with a "more" hint; `--full` gives upstream text (research R7). `--fields a,b` on any `--json` command returns only those keys (opt-in, new).
+
+## Decision D-1 (CTO, 2026-10-27): `work_type` and `revision` (from QA T015 finding F3)
+
+Readers checked, none depend on either field: the board (`beads-lite-ui`, `server/list-adapters.js` spreads the rows through; the only `revision` it reads is the WebSocket message revision, a different thing), `~/company/scripts` and skills, rayeh tools. So this is about contract cleanliness, not breakage.
+
+- `work_type`: MATCH upstream. Print it only when it is neither empty nor `mutex` (upstream tag is `omitempty`, empty = mutex); the "Work type:" line in `show` text follows the same rule. Because the contract says "same fields and values" and the migration should not invent a default upstream never printed.
+- `revision`: ACCEPT a different VALUE, keep the SHAPE. It is the optimistic-concurrency token (decimal string, `RevisionToken`), derived from Dolt's commit hash upstream, so no byte-equal value is possible on SQLite. The field stays present wherever upstream prints it. Add to the normalisation list: "`revision` values (presence and string type are still compared)".
+- Cost: zero (a print rule, no storage or per-user cost).
+
+Code change: T049 in tasks.md (CTO numbered it T044; renumbered because swe/perf already uses T044). After it lands, QA removes `revision|work_type` from `IGNORED_FIELDS` in `parity/runner/normalize.mjs` and normalises only the `revision` value.
