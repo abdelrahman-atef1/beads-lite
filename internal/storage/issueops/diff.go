@@ -21,6 +21,10 @@ func DiffInTx(ctx context.Context, tx *sql.Tx, fromRef, toRef string) ([]*storag
 		return nil, fmt.Errorf("invalid toRef: %w", err)
 	}
 
+	if !DoltSQL() { // lite: dolt_diff is Dolt-only
+		return nil, errNoDoltSQL("Diff")
+	}
+
 	query := fmt.Sprintf(`
 		SELECT
 			COALESCE(from_id, '') as from_id,

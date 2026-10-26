@@ -28,6 +28,9 @@ func HistoricalIssueIDsInTx(ctx context.Context, tx DBTX, ids []string) (map[str
 	if len(ids) == 0 {
 		return present, nil
 	}
+	if !DoltSQL() { // lite: no dolt_history_issues, report no history
+		return present, nil
+	}
 
 	// Dedupe up front so a caller's repeated id can't inflate a chunk.
 	unique := make([]string, 0, len(ids))

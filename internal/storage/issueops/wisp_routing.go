@@ -22,6 +22,13 @@ func IsActiveWispInTx(ctx context.Context, tx DBTX, id string) bool {
 	return err == nil
 }
 
+// lite: isTableMissing also recognises SQLite's "no such table" so optional
+// wisp tables degrade to "empty" on the SQLite backend as they do on Dolt.
+func isTableMissing(err error) bool {
+	return isTableNotExistError(err) ||
+		(err != nil && strings.Contains(strings.ToLower(err.Error()), "no such table"))
+}
+
 func wispsTableEmptyOrMissingInTx(ctx context.Context, tx DBTX) (bool, error) {
 	var probe int
 	err := tx.QueryRowContext(ctx, "SELECT 1 FROM wisps LIMIT 1").Scan(&probe)
@@ -30,7 +37,7 @@ func wispsTableEmptyOrMissingInTx(ctx context.Context, tx DBTX) (bool, error) {
 		return false, nil
 	case errors.Is(err, sql.ErrNoRows):
 		return true, nil
-	case isTableNotExistError(err):
+	case isTableMissing(err):
 		return true, nil
 	default:
 		return false, err
@@ -46,7 +53,7 @@ func optionalTableExistsInTx(ctx context.Context, tx *sql.Tx, table string) (boo
 		return true, nil
 	case errors.Is(err, sql.ErrNoRows):
 		return true, nil
-	case isTableNotExistError(err):
+	case isTableMissing(err):
 		return false, nil
 	default:
 		return false, err
@@ -158,7 +165,7 @@ func PartitionWispIDsInTx(ctx context.Context, tx DBTX, ids []string) (wispIDs, 
 			args...)
 		if qErr != nil {
 			// Wisps table may not exist yet on older schemas — treat as "no wisps".
-			if isTableNotExistError(qErr) {
+			if isTableMissing(qErr) {
 				return nil, append([]string(nil), ids...), nil
 			}
 			return nil, nil, fmt.Errorf("partition wisp ids: %w", qErr)
