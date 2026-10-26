@@ -30,7 +30,7 @@ const (
 
 // localCommands always run in the fork, even on a Dolt project: they manage
 // the switch itself or need no store.
-var localCommands = map[string]bool{"lite-switch": true, "version": true, "help": true}
+var localCommands = map[string]bool{"lite-switch": true, "version": true, "help": true, "migrate-to-sqlite": true} // lite: migrate-to-sqlite reads the Dolt project itself
 
 // ExitFunc is replaced in tests.
 var ExitFunc = os.Exit
