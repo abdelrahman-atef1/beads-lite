@@ -297,7 +297,7 @@ func BuildIssueFilterClauses(query string, filter types.IssueFilter, tables Filt
 	} {
 		if tc.v != nil {
 			whereClauses = append(whereClauses, fmt.Sprintf("%s %s ?", tc.col, tc.op))
-			args = append(args, tc.v.Format(time.RFC3339))
+			args = append(args, *tc.v)
 		}
 	}
 
@@ -331,7 +331,7 @@ func BuildIssueFilterClauses(query string, filter types.IssueFilter, tables Filt
 	}
 	if filter.Overdue {
 		whereClauses = append(whereClauses, "due_at IS NOT NULL AND due_at < ? AND status != ?")
-		args = append(args, time.Now().UTC().Format(time.RFC3339), types.StatusClosed)
+		args = append(args, time.Now().UTC(), types.StatusClosed)
 	}
 
 	var err error

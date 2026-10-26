@@ -387,5 +387,5 @@ CREATE TABLE IF NOT EXISTS `lite_issue_versions` (
 );
 CREATE INDEX IF NOT EXISTS idx_lite_issue_versions_issue ON `lite_issue_versions` (`issue_id`,`seq`);
 CREATE TABLE IF NOT EXISTS `lite_touched` (`issue_id` TEXT PRIMARY KEY);
-CREATE TRIGGER IF NOT EXISTS lite_touch_ins AFTER INSERT ON `issues` BEGIN INSERT OR IGNORE INTO `lite_touched` VALUES (NEW.`id`); END;
-CREATE TRIGGER IF NOT EXISTS lite_touch_upd AFTER UPDATE ON `issues` BEGIN INSERT OR IGNORE INTO `lite_touched` VALUES (NEW.`id`); END;
+CREATE TRIGGER IF NOT EXISTS lite_touch_ins AFTER INSERT ON `issues` BEGIN INSERT INTO `lite_touched` SELECT NEW.`id` WHERE NOT EXISTS (SELECT 1 FROM `lite_touched` WHERE `issue_id` = NEW.`id`); END;
+CREATE TRIGGER IF NOT EXISTS lite_touch_upd AFTER UPDATE ON `issues` BEGIN INSERT INTO `lite_touched` SELECT NEW.`id` WHERE NOT EXISTS (SELECT 1 FROM `lite_touched` WHERE `issue_id` = NEW.`id`); END;
