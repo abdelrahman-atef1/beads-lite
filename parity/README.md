@@ -39,3 +39,13 @@ take hours on upstream); single-id shape and flag variants are captured for 12 s
 
 Timings are whole-process wall time on THIS machine; other agents' load inflates them.
 Record the machine load next to any number you quote.
+
+## Capture status (2026-10-26)
+
+Upstream bd 1.3.1 oracle complete for all five stores (whisper-flow 172, abduu-tasks 183, fatura 182,
+rayeh 187, company 197 command records; 0 unexpected non-zero; only `err.list-bad-status` is non-JSON by design).
+Run it with `--conc 3` (three store copies per project) and `--timeout 7200000` on a loaded PC.
+Datum for the plan: upstream `show` of 100 ids in one process took 5 to 60+ minutes under load
+(company, 17 batches); a re-run after a crash is safe because the index is resumable, but an index
+entry with a non-zero exit code from a killed run must be removed first (grep it out of `_index.jsonl`;
+write it without a BOM).

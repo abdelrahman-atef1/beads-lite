@@ -31,7 +31,7 @@ if (rc.status > 7) throw new Error("robocopy failed " + rc.status);
 ensureDir(outDir);
 fs.writeFileSync(path.join(outDir, "_index.jsonl"), "");
 
-const prefix = JSON.parse(fs.readFileSync(path.join(src, "metadata.json"), "utf8")).dolt_database || project;
+const prefix = project; // issue prefix = project name (dolt_database uses underscores, which bd rejects)
 const A = `${prefix}-qaw1`, B = `${prefix}-qaw2`, C = `${prefix}-qaw3`;
 const bodyFile = path.join(scratch, "body.md");
 const noteFile = path.join(scratch, "note.txt");
@@ -40,7 +40,8 @@ fs.writeFileSync(noteFile, "comment from file\nsecond line اختبار\n");
 
 const steps = [
   ["create.A", ["create", "QA parity A", "--id", A, "-a", "qa", "-p", "1", "--body-file", bodyFile, "--json"]],
-  ["create.B-child", ["create", "QA parity B child", "--id", B, "--parent", A, "-p", "2", "--json"]],
+  ["create.B", ["create", "QA parity B", "--id", B, "-p", "2", "--json"]],
+  ["create.child-of-A", ["create", "QA parity child of A", "--parent", A, "-p", "2", "--json"]], // hierarchical id A.1
   ["create.C-silent", ["create", "QA parity C", "--id", C, "--silent"]],
   ["create.minted-silent", ["create", "QA parity minted", "--silent"]], // id is minted: normalised below
   ["update.claim", ["update", A, "--claim", "--json"]],
@@ -97,6 +98,6 @@ for (const [name, args] of steps) {
 }
 if (!o.keep) {
   // only the folder this run created
-  fs.rmSync(scratch, { recursive: true, force: true });
+  try { fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 1000 }); } catch (e) { console.log("scratch cleanup failed (remove by hand):", scratch, e.code); }
 }
 console.log("bd:", bdBin(), "out:", outDir);
