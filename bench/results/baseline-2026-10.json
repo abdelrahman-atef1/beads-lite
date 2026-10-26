@@ -6,7 +6,7 @@
   "agents": 0,
   "board_polling": false,
   "n": 20,
-  "at": "2026-10-26T05:59:41.147Z",
+  "at": "2026-10-26T06:57:28.443Z",
   "complete": false,
   "results": {
     "version": {
@@ -22,6 +22,56 @@
       "p95_ms": 66916.1,
       "max_ms": 66916.1,
       "failures": 0
+    },
+    "list": {
+      "n": 20,
+      "median_ms": 13209.4,
+      "p95_ms": 55951.6,
+      "max_ms": 55951.6,
+      "failures": 0
+    },
+    "ready": {
+      "n": 20,
+      "median_ms": 13496.2,
+      "p95_ms": 41386,
+      "max_ms": 41386,
+      "failures": 0
+    },
+    "comments": {
+      "n": 20,
+      "median_ms": 6676.8,
+      "p95_ms": 61899.7,
+      "max_ms": 61899.7,
+      "failures": 0
+    },
+    "count": {
+      "n": 20,
+      "median_ms": 7777.8,
+      "p95_ms": 43379.1,
+      "max_ms": 43379.1,
+      "failures": 0
+    },
+    "create": {
+      "n": 20,
+      "median_ms": 23755,
+      "p95_ms": 111793.2,
+      "max_ms": 111793.2,
+      "failures": 0
+    },
+    "update": {
+      "n": 20,
+      "median_ms": 25445.2,
+      "p95_ms": 144546.8,
+      "max_ms": 144546.8,
+      "failures": 0
+    },
+    "comments add": {
+      "n": 20,
+      "median_ms": 30020.4,
+      "p95_ms": 79192.2,
+      "max_ms": 79192.2,
+      "failures": 0
     }
-  }
+  },
+  "note": "PARTIAL: run killed by session restart before close; no background agents, no board, PC heavily loaded"
 }
