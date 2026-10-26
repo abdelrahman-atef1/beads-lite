@@ -17,6 +17,9 @@ import (
 // dolt_history_* tables return multiple rows per PK (one per commit), but
 // the query planner incorrectly assumes WHERE id=? returns one row.
 func HistoryInTx(ctx context.Context, tx DBTX, issueID string) ([]*storage.HistoryEntry, error) {
+	if !DoltSQL() { // lite: history comes from lite_issue_versions (sqlitestore), not dolt_history_*
+		return nil, errNoDoltSQL("History")
+	}
 	rows, err := tx.QueryContext(ctx, `
 		SELECT
 			id, title,
@@ -111,6 +114,9 @@ func HistoryInTx(ctx context.Context, tx DBTX, issueID string) ([]*storage.Histo
 // The subquery wrapper avoids Dolt's max1Row optimization on PK lookup, for
 // the same reason described on HistoryInTx above.
 func PreviousExternalRefInTx(ctx context.Context, tx *sql.Tx, issueID string, asOf time.Time) (string, bool, error) {
+	if !DoltSQL() { // lite: no dolt_history_issues; "no history entry" degrades callers gracefully
+		return "", false, nil
+	}
 	var previousRef sql.NullString
 	err := tx.QueryRowContext(ctx, `
 		SELECT external_ref

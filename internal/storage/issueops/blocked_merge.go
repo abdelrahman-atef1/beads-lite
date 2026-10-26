@@ -87,6 +87,9 @@ func pendingIsBlockedRecompute(ctx context.Context, tx *sql.Tx) string {
 // clone converges — both sides compute the same values from the same merged
 // graph).
 func RecomputeIsBlockedAfterMergeInTx(ctx context.Context, tx *sql.Tx, fromCommit string) error {
+	if !DoltSQL() { // lite: no merges or dolt_diff; a full recompute is always correct
+		return recomputeIsBlockedForAll(ctx, tx)
+	}
 	// bd-578h9.11: a marker from an earlier recompute that failed after its
 	// merge committed means this call must also cover THAT merge's window —
 	// the head==fromCommit skip below would otherwise read it as "nothing

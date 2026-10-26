@@ -51,6 +51,9 @@ func GuardBlockedRecomputeWorkingSet(ctx context.Context, tx DBTX) error {
 // dirtyBlockedRecomputeGraphTables returns the sorted subset of the graph tables
 // that have uncommitted working-set changes right now.
 func dirtyBlockedRecomputeGraphTables(ctx context.Context, tx DBTX) ([]string, error) {
+	if !DoltSQL() { // lite: no working set, nothing is ever dirty
+		return nil, nil
+	}
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(blockedRecomputeGraphTables)), ",")
 	args := make([]any, len(blockedRecomputeGraphTables))
 	for i, t := range blockedRecomputeGraphTables {

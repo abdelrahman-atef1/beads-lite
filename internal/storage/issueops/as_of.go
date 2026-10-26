@@ -38,6 +38,10 @@ func AsOfInTx(ctx context.Context, tx DBTX, issueID string, ref string) (*types.
 		return nil, fmt.Errorf("invalid ref: %w", err)
 	}
 
+	if !DoltSQL() { // lite: AS OF is Dolt-only
+		return nil, errNoDoltSQL("AsOf")
+	}
+
 	var issue types.Issue
 	var createdAtStr, updatedAtStr sql.NullString
 	var closedAt sql.NullTime
