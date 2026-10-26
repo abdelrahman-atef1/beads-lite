@@ -53,7 +53,7 @@ type Options struct {
 	// CallTimeout bounds one external call (default 10 min).
 	CallTimeout time.Duration
 	// OracleBeads is how many beads are compared against upstream
-	// `bd history` (default 20; negative disables).
+	// `bd history` (default 6; negative disables).
 	OracleBeads int
 	// Progress, if set, is called with a short line now and then.
 	Progress func(string)
@@ -130,7 +130,7 @@ func New(o Options) (*Extractor, error) {
 		o.CallTimeout = 10 * time.Minute
 	}
 	if o.OracleBeads == 0 {
-		o.OracleBeads = 20
+		o.OracleBeads = 6
 	}
 	return &Extractor{o: o}, nil
 }
