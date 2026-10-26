@@ -160,3 +160,14 @@ func TestFirstDiffColumnTreatsNullAsZeroDefault(t *testing.T) {
 		t.Fatalf("first differing column = %q, want priority", c)
 	}
 }
+
+func TestSameJSONIgnoresRevisionAndDefaultWorkType(t *testing.T) {
+	a := []byte(`[{"id":"x","revision":"-14","dependencies":[{"id":"y"}]}]`)
+	b := []byte(`[{"id":"x","revision":"0","work_type":"mutex","dependencies":[{"id":"y","work_type":"mutex"}]}]`)
+	if !sameJSON(a, b) {
+		t.Fatal("revision and default work_type must not count")
+	}
+	if sameJSON(a, []byte(`[{"id":"x","work_type":"other","dependencies":[{"id":"y"}]}]`)) {
+		t.Fatal("a real work_type difference must count")
+	}
+}

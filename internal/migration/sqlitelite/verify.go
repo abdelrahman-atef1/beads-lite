@@ -188,6 +188,8 @@ func sameJSON(a, b []byte) bool {
 	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
 		return bytes.Equal(bytes.TrimSpace(a), bytes.TrimSpace(b))
 	}
+	stripShowNoise(x)
+	stripShowNoise(y)
 	xa, _ := json.Marshal(x)
 	yb, _ := json.Marshal(y)
 	return bytes.Equal(xa, yb)
@@ -389,4 +391,26 @@ func queryStrings(ctx context.Context, db *sql.DB, q string, args ...any) ([]str
 		out = append(out, s.String)
 	}
 	return out, rows.Err()
+}
+
+// stripShowNoise removes what can never match between upstream 1.3.1 on Dolt
+// and the fork on SQLite: "revision" is derived from Dolt's commit hash, and
+// "work_type":"mutex" is the default of a field upstream 1.3.1 does not print.
+// lite: both are dropped from BOTH sides before comparing; any other value of
+// work_type still shows as a difference.
+func stripShowNoise(v any) {
+	switch x := v.(type) {
+	case map[string]any:
+		delete(x, "revision")
+		if wt, ok := x["work_type"].(string); ok && wt == "mutex" {
+			delete(x, "work_type")
+		}
+		for _, c := range x {
+			stripShowNoise(c)
+		}
+	case []any:
+		for _, c := range x {
+			stripShowNoise(c)
+		}
+	}
 }
