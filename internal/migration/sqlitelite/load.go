@@ -551,7 +551,7 @@ func loadVersions(ctx context.Context, tx *sql.Tx, r *issueRec, b *BeadHistory, 
 			if rep.ExtraVersionCol == nil {
 				rep.ExtraVersionCol = map[string]string{}
 			}
-			rep.ExtraVersionCol[r.id] = firstDiffColumn(newest, cur)
+			rep.ExtraVersionCol[r.id] = strings.Join(diffColumns(newest, cur), ",") // first differing column first
 		}
 		upd, _ := r.cols["updated_at"].(string)
 		if upd == "" {
@@ -599,9 +599,17 @@ func splitVersion(cols map[string]any) ([]byte, textBundle) {
 	return out, b
 }
 
-// firstDiffColumn names the first column (sorted) on which two versions differ
-// the way sameVersion compares them: NULL and "" are equal.
-func firstDiffColumn(a, b map[string]any) string {
+// derivedCols are bookkeeping the store computes or bumps itself (hash of the
+// content, denormalized blocked flag, optimistic-lock counter). They say nothing
+// about whether an issue changed, so they never make an extra version.
+var derivedCols = map[string]bool{"content_hash": true, "is_blocked": true, "row_lock": true}
+
+// firstDiffColumn names the first column (sorted) on which two versions differ,
+// or "" when they are the same version. A column that did not exist at an old
+// commit reads NULL there and holds its zero default in the live row, so NULL,
+// "", 0 and (for metadata) "{}" all count as the same empty value.
+func diffColumns(a, b map[string]any) []string {
+	var out []string
 	seen := map[string]bool{}
 	var names []string
 	for _, m := range []map[string]any{a, b} {
@@ -614,25 +622,53 @@ func firstDiffColumn(a, b map[string]any) string {
 	}
 	sort.Strings(names)
 	norm := func(v any) string {
-		if v == nil || v == "" {
+		switch x := v.(type) {
+		case nil:
 			return ""
+		case string:
+			if len(x) > 0 && (x[0] == '{' || x[0] == '[') { // JSON text: compare canonically, Dolt and the export order keys differently
+				var j any
+				if json.Unmarshal([]byte(x), &j) == nil {
+					b, _ := json.Marshal(j)
+					x = string(b)
+				}
+			}
+			if x == "{}" {
+				return ""
+			}
+			return x
+		case int64:
+			if x == 0 {
+				return ""
+			}
+		case float64:
+			if x == 0 {
+				return ""
+			}
 		}
 		j, _ := json.Marshal(v)
 		return string(j)
 	}
 	for _, k := range names {
-		if norm(a[k]) != norm(b[k]) {
-			return k
+		if derivedCols[k] {
+			continue
 		}
+		if norm(a[k]) != norm(b[k]) {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// firstDiffColumn is the first differing column, or "" for the same version.
+func firstDiffColumn(a, b map[string]any) string {
+	if d := diffColumns(a, b); len(d) > 0 {
+		return d[0]
 	}
 	return ""
 }
 
-func sameVersion(a, b map[string]any) bool {
-	sa, ba := splitVersion(a)
-	sb, bb := splitVersion(b)
-	return bytes.Equal(sa, sb) && ba == bb
-}
+func sameVersion(a, b map[string]any) bool { return len(diffColumns(a, b)) == 0 }
 
 func loadLeases(ctx context.Context, tx *sql.Tx, recs []*issueRec, in *Input, rep *LoadReport) error {
 	if _, over := in.Tables["leases"]; over {

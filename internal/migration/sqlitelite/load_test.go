@@ -146,3 +146,17 @@ func TestCheckUncovered(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// lite: a column added after an old commit reads NULL there and 0 in the live
+// row; that is not a new version. A real difference is named.
+func TestFirstDiffColumnTreatsNullAsZeroDefault(t *testing.T) {
+	old := map[string]any{"title": "t", "compaction_level": nil, "metadata": nil, "priority": int64(1)}
+	cur := map[string]any{"title": "t", "compaction_level": int64(0), "metadata": "{}", "priority": int64(1)}
+	if c := firstDiffColumn(old, cur); c != "" {
+		t.Fatalf("zero defaults differ at %q", c)
+	}
+	cur["priority"] = int64(2)
+	if c := firstDiffColumn(old, cur); c != "priority" {
+		t.Fatalf("first differing column = %q, want priority", c)
+	}
+}
