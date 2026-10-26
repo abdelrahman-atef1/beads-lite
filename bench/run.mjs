@@ -47,6 +47,7 @@ const cmds = {
   close: () => ["close", mine.shift(), "--reason", "bench"],
 };
 const results = {};
+const save = (done) => { if (a.out) writeFileSync(a.out, JSON.stringify({ label: a.label, bd, project: cwd, beads: ids.length, agents, board_polling: !!a["board-url"], n: N, at: new Date().toISOString(), complete: done, results }, null, 2)); };
 for (const [name, mk] of Object.entries(cmds)) {
   const ms = [], codes = [];
   for (let i = 0; i < N; i++) {
@@ -57,8 +58,9 @@ for (const [name, mk] of Object.entries(cmds)) {
   }
   results[name] = { n: ms.length, median_ms: r1(median(ms)), p95_ms: r1(pct(ms, 0.95)), max_ms: r1(Math.max(...ms)), failures: codes.filter((c) => c !== 0).length };
   console.log(name.padEnd(14), JSON.stringify(results[name]));
+  save(false);
 }
 stop = true; await Promise.all(bg);
 const doc = { label: a.label, bd, bd_version: (await run(bd, ["version"], { cwd })).out.trim().split("\n")[0], project: cwd, beads: ids.length,
   agents, board_polling: !!a["board-url"], n: N, at: new Date().toISOString(), results };
-if (a.out) writeFileSync(a.out, JSON.stringify(doc, null, 2));
+if (a.out) writeFileSync(a.out, JSON.stringify({ ...doc, complete: true }, null, 2));

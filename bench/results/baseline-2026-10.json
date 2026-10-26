@@ -1,0 +1,27 @@
+{
+  "label": "upstream-1.3.1-company-today-noagents",
+  "bd": "C:\\Users\\abduu\\AppData\\Roaming\\npm\\node_modules\\@beads\\bd\\bin\\bd.exe",
+  "project": "E:\\Projects\\beads-lite-bench-data\\company",
+  "beads": 1670,
+  "agents": 0,
+  "board_polling": false,
+  "n": 20,
+  "at": "2026-10-26T05:59:41.147Z",
+  "complete": false,
+  "results": {
+    "version": {
+      "n": 20,
+      "median_ms": 1475.8,
+      "p95_ms": 8247,
+      "max_ms": 8247,
+      "failures": 0
+    },
+    "show": {
+      "n": 20,
+      "median_ms": 15889,
+      "p95_ms": 66916.1,
+      "max_ms": 66916.1,
+      "failures": 0
+    }
+  }
+}
