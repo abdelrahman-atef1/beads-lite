@@ -3417,7 +3417,13 @@ type initStateCommitter interface {
 // avoid sweeping unrelated stale values, so using it here leaves every fresh
 // database dirty immediately after a successful init.
 func commitInitState(ctx context.Context, store initStateCommitter) error {
-	return store.CommitWithConfig(ctx, "bd init")
+	err := store.CommitWithConfig(ctx, "bd init")
+	// lite: the SQLite backend has no commit concept; every write is already durable.
+	var unsupported *storage.ErrUnsupported
+	if errors.As(err, &unsupported) {
+		return nil
+	}
+	return err
 }
 
 // verifyMetadata writes a metadata field and verifies the write succeeded.

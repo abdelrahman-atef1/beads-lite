@@ -62,5 +62,7 @@ func Register() {
 	backends.Register(Backend, backends.Backend{
 		Open:         openWorkspace(Options{}),
 		OpenReadOnly: openWorkspace(Options{ReadOnly: true}),
+		// lite: beads.db sits in .beads; there is no Dolt directory to discover.
+		WorkspaceIsBeadsDir: true,
 	})
 }

@@ -2069,7 +2069,8 @@ var rootCmd = &cobra.Command{
 							key := fmt.Sprintf("tip_%s_last_shown", tipID)
 							value := time.Now().Format(time.RFC3339)
 							if err := store.SetLocalMetadata(rootCtx, key, value); err != nil {
-								if errors.Is(err, embeddeddolt.ErrReadOnly) {
+								// lite: the sqlite read-only handle reports "readonly database" rather than ErrReadOnly.
+								if errors.Is(err, embeddeddolt.ErrReadOnly) || strings.Contains(err.Error(), "readonly database") {
 									debug.Logf("tip auto-commit: store is read-only, skipping tip metadata: %v", err)
 									tipWritesRefused = true
 									break

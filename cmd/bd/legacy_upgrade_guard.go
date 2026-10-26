@@ -12,7 +12,9 @@ import (
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/doltserver"
 	"github.com/steveyegge/beads/internal/git"
+	"github.com/steveyegge/beads/internal/storage/backends"
 	"github.com/steveyegge/beads/internal/storage/embeddeddolt"
+	"github.com/steveyegge/beads/internal/storage/sqlitestore"
 	"github.com/steveyegge/beads/internal/utils"
 	"golang.org/x/mod/semver"
 )
@@ -178,7 +180,12 @@ func configuredHistoricalSQLiteWorkspace(beadsDir string, cfg *configfile.Config
 	if filepath.Base(databaseName) != databaseName {
 		return false
 	}
-	return isNonEmptyRegularFile(filepath.Join(beadsDir, databaseName))
+	dbPath := filepath.Join(beadsDir, databaseName)
+	if !isNonEmptyRegularFile(dbPath) {
+		return false
+	}
+	// lite: a store this build created (and registered) is the supported engine, not a historical workspace.
+	return !(backends.Registered(configfile.BackendSQLite) && sqlitestore.IsLiteStore(dbPath))
 }
 
 // discoveredHistoricalSQLiteWorkspace classifies a metadata-less workspace by

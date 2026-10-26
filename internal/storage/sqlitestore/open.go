@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" database/sql driver
 )
@@ -56,6 +57,8 @@ func Open(ctx context.Context, path string, opts Options) (*Store, error) {
 	d := dsn(path)
 	if opts.ReadOnly {
 		d += "&_pragma=query_only(1)"
+		// lite: BEGIN IMMEDIATE is a write lock; a read-only handle must begin deferred.
+		d = strings.Replace(d, "_txlock=immediate", "_txlock=deferred", 1)
 	}
 	db, err := openDB(d)
 	if err != nil {
