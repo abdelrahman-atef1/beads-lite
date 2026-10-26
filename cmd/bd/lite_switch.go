@@ -267,7 +267,7 @@ func switchFlip(beadsDir string) error {
 // switchRollback sets backend dolt, archives any new beads.db (moved, never
 // deleted), and ends the freeze.
 func switchRollback(beadsDir string, now time.Time) error {
-	if db := filepath.Join(beadsDir, "beads.db"); fileExists(db) {
+	if db := filepath.Join(beadsDir, "beads.db"); fileExists(beadsDir, "beads.db") {
 		dst := filepath.Join(beadsDir, "lite-archive")
 		if err := os.MkdirAll(dst, 0o700); err != nil {
 			return err
@@ -295,9 +295,4 @@ func setBackendAndEnd(beadsDir, backend string) error {
 		return err
 	}
 	return switchstate.WaitReleased(beadsDir, 15*time.Second)
-}
-
-func fileExists(p string) bool {
-	_, err := os.Stat(p)
-	return err == nil
 }
