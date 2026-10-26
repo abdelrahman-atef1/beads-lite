@@ -297,3 +297,4 @@ retract (
 	v1.2.0 // burned tag for the accidental 1.2 release, never published
 	v1.1.1 // burned tag, never published; superseded by v1.1.2
 )
+replace github.com/alecthomas/chroma/v2 => ./third_party/chroma

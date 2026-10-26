@@ -41,6 +41,7 @@ T004, T006, T007, T012, T014, T019, T022, T023, T032, T038. Already running: T00
 - [ ] T011 [US1] (swe B; owns `cmd/bd/store_factory*.go`, `cmd/bd/init.go`, `internal/metrics/`) W5: `sqlite` default for `bd init`; open path for `sqlite` skips `acquireEmbeddedLock`; call `passthrough.MaybeExec()` (T012) before opening, and `switchstate.Check()` (T022) after resolving the project; metrics compiled off (default disabled, empty endpoint). Blocked by G1 (T010).
 - [ ] T012 [P] [US1] (swe F; owns `internal/lite/passthrough/`) W12: when the resolved store is embedded Dolt, run upstream bd 1.3.1 (`BD_LITE_UPSTREAM` or fixed path) with identical args, env, stdio and exit code, `windowsHide`; tests with a stand-in exe, including the NoDefaultCurrentDirectoryInExePath case (company lesson). Research R6.
 - [ ] T013 [US1] (sre; owns `bench/results/`) run T004 harness on fork vs upstream for all five corpora (migrated copies) and 12x; stress with backup snapshot running. Pass = SC-001, SC-004, SC-005 and the plan's internal targets. Blocked by T011, T020.
+- [ ] T044 [US1] (swe; owns the fixed per-call startup path) Perf: lite misses latency targets. T013 evidence (sre/bench 997ab422e): rayeh copy count ~250 ms, show 268 ms; company show 1.7 s. Find and cut the fixed per-call cost (startup/init, schema checks, passthrough detection, telemetry, repo discovery, WAL open, O(n) in show). Pass = show <=150 ms, list/ready <=200 ms, writes <=120 ms on a copy; parity tests green.
 
 ## Phase 4: US3 Existing scripts, hooks and prompts keep working (P1)
 
