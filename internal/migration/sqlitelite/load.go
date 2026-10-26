@@ -297,6 +297,10 @@ func normTime(s string) string {
 }
 
 func insertRow(ctx context.Context, tx *sql.Tx, table string, cols map[string]any) error {
+	return insertRowVerb(ctx, tx, "INSERT", table, cols)
+}
+
+func insertRowVerb(ctx context.Context, tx *sql.Tx, verb, table string, cols map[string]any) error {
 	names := make([]string, 0, len(cols))
 	for c := range cols {
 		names = append(names, c)
@@ -308,7 +312,7 @@ func insertRow(ctx context.Context, tx *sql.Tx, table string, cols map[string]an
 	for i, c := range names {
 		args[i], ph[i], q[i] = cols[c], "?", "`"+c+"`"
 	}
-	_, err := tx.ExecContext(ctx, "INSERT INTO `"+table+"` ("+strings.Join(q, ",")+") VALUES ("+strings.Join(ph, ",")+")", args...)
+	_, err := tx.ExecContext(ctx, verb+" INTO `"+table+"` ("+strings.Join(q, ",")+") VALUES ("+strings.Join(ph, ",")+")", args...)
 	return err
 }
 
@@ -658,7 +662,7 @@ func loadTables(ctx context.Context, tx *sql.Tx, tabs map[string][]map[string]an
 				}
 				clean[c] = v
 			}
-			if err := insertRow(ctx, tx, t, clean); err != nil {
+			if err := insertRowVerb(ctx, tx, "INSERT OR REPLACE", t, clean); err != nil { // extracted rows win over schema seeds
 				return fmt.Errorf("sqlitelite: Input.Tables[%s] row %d: %w", t, i, err)
 			}
 			rep.Rows[t]++
