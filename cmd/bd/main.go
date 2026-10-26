@@ -29,6 +29,8 @@ import (
 	"github.com/steveyegge/beads/internal/debug"
 	"github.com/steveyegge/beads/internal/doltserver"
 	"github.com/steveyegge/beads/internal/hooks"
+	"github.com/steveyegge/beads/internal/lite/passthrough"
+	"github.com/steveyegge/beads/internal/lite/switchstate"
 	"github.com/steveyegge/beads/internal/metrics"
 	"github.com/steveyegge/beads/internal/migration"
 	"github.com/steveyegge/beads/internal/molecules"
@@ -36,6 +38,7 @@ import (
 	"github.com/steveyegge/beads/internal/routing"
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/storage/backends"
+	"github.com/steveyegge/beads/internal/storage/sqlitestore"
 	"github.com/steveyegge/beads/internal/storage/dolt"
 	dbidentifier "github.com/steveyegge/beads/internal/storage/domain/db"
 	"github.com/steveyegge/beads/internal/storage/embeddeddolt"
@@ -1459,6 +1462,11 @@ var rootCmd = &cobra.Command{
 		beadsDir := resolveCommandBeadsDir(dbPath)
 		prepareSelectedCommandContext(beadsDir, true)
 		refreshBoundCommandConfig(cmd)
+		// lite: beads-lite switch notice / freeze (W13). Writes refused with exit 3.
+		if swErr := switchstate.Check(beadsDir, !isReadOnlyCommand(cmd.Name()) && !isPreviewCommand(cmd), os.Stderr); swErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", swErr)
+			return &exitError{Code: switchstate.ExitFrozen}
+		}
 		if guardErr := guardLegacyUpgradeWorkspace(beadsDir); guardErr != nil {
 			return HandleError("%v", guardErr)
 		}
@@ -2388,6 +2396,11 @@ func validateWorkspaceIdentity(ctx context.Context, beadsDir string) error {
 }
 
 func main() {
+	// lite: embedded-Dolt projects run upstream bd 1.3.1 unchanged (W12); sqlite
+	// is a registered backend (W5, T006). Both before anything opens a store.
+	passthrough.MaybeExec()
+	sqlitestore.Register()
+
 	// BD_NAME overrides the binary name in help text (e.g. BD_NAME=ops makes
 	// "ops --help" show "ops" instead of "bd"). Useful for multi-instance
 	// setups where wrapper scripts set BEADS_DIR for routing.
@@ -2428,6 +2441,9 @@ func main() {
 }
 
 func resolveMetricsEnabled() bool {
+	if !metrics.CompiledIn() { // lite: metrics compiled off
+		return false
+	}
 	if v, ok := os.LookupEnv(metrics.EnvDisableMetrics); ok {
 		return !envTruthyValue(v)
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/beads/internal/metrics"
+	"github.com/steveyegge/beads/internal/lite/compact"
 	"github.com/steveyegge/beads/internal/types"
 	"github.com/steveyegge/beads/internal/ui"
 	"github.com/steveyegge/beads/internal/uimd"
@@ -184,6 +185,13 @@ var showCmd = &cobra.Command{
 					return HandleErrorRespectJSON("%v", derr)
 				}
 				allDetails = append(allDetails, details)
+				result.Close()
+				continue
+			}
+			// lite: compact text (<= 8 KB per bead); --full or --long = upstream text.
+			if liteCompactText(longMode) {
+				cmts, _ := issueStore.GetIssueComments(ctx, issue.ID)
+				fmt.Print(compact.Show(issue, cmts))
 				result.Close()
 				continue
 			}

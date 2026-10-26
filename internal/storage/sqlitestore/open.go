@@ -65,5 +65,9 @@ func Open(ctx context.Context, path string, opts Options) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("sqlitestore: %s: %w", path, err)
 	}
-	return &Store{db: db, path: path, actor: opts.Actor}, nil
+	st := &Store{db: db, path: path, actor: opts.Actor}
+	if !opts.ReadOnly {
+		st.EnableHistory() // T009: every write commit records lite_issue_versions rows
+	}
+	return st, nil
 }

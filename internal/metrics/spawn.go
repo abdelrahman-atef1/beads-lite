@@ -162,6 +162,9 @@ func touchFlushMarker(dir string) {
 }
 
 func MaybeSpawnFlusher() {
+	if !CompiledIn() { // lite: metrics compiled off, never spawn a child
+		return
+	}
 	if !shouldSpawnFlusher() {
 		return
 	}

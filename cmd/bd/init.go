@@ -330,8 +330,8 @@ var initCmd = &cobra.Command{
 	Long: `Initialize bd in the current directory by creating a .beads/ directory
 and its storage (a Dolt database by default). Optionally specify a custom issue prefix.
 
-Dolt is the default and only supported storage backend, with full version
-control (history, branching, sync).
+beads-lite stores issues in a single SQLite file (.beads/beads.db) by default.
+Use --backend=dolt to create a Dolt database instead (run by upstream bd).
 
 Use --database to specify an existing server database name, overriding the
 default prefix-based naming. This is useful when an external tool (e.g. an orchestrator)
@@ -557,23 +557,25 @@ Non-interactive mode (--non-interactive or BD_NON_INTERACTIVE=1):
 			externalConfig = &cfg
 		}
 
-		// Backend selection: Dolt is the only supported backend.
-		if !configfile.IsSupportedBackend(backendFlag) {
-			switch backendFlag {
-			case configfile.BackendPostgres, configfile.BackendMySQL:
-				return fmt.Errorf("storage backend %q is no longer supported: %s; the supported backend is \"dolt\" (default)", backendFlag, configfile.RemovedBackendRationale)
-			case configfile.BackendSQLite:
-				return fmt.Errorf("storage backend %q is no longer supported: %s; the supported backend is \"dolt\" (default)", backendFlag, configfile.RemovedSQLiteRationale)
-			}
-			return fmt.Errorf("unknown backend %q: the supported backend is \"dolt\" (default)", backendFlag)
+		// Backend selection. lite: sqlite is the default; dolt stays available
+		// with --backend=dolt (the passthrough runs upstream bd for those projects).
+		if backendFlag == "" {
+			backendFlag = liteDefaultInitBackend()
 		}
-		// A registered extension backend passes IsSupportedBackend so its
-		// existing workspaces can be opened, but init provisions Dolt only and
-		// would otherwise create the workspace and persist backend: dolt. Reject
-		// it here rather than silently creating the wrong workspace; downstream
-		// registrants supply their own workspace-creation path.
-		if backends.Registered(backendFlag) {
-			return fmt.Errorf("backend %q cannot be created by bd init; it can only open an existing workspace (bd init provisions \"dolt\", the default)", backendFlag)
+		if !liteInitBackendOK(backendFlag) {
+			if !configfile.IsSupportedBackend(backendFlag) {
+				switch backendFlag {
+				case configfile.BackendPostgres, configfile.BackendMySQL:
+					return fmt.Errorf("storage backend %q is no longer supported: %s; the supported backends are \"sqlite\" (default) and \"dolt\"", backendFlag, configfile.RemovedBackendRationale)
+				}
+				return fmt.Errorf("unknown backend %q: the supported backends are \"sqlite\" (default) and \"dolt\"", backendFlag)
+			}
+			// A registered extension backend passes IsSupportedBackend so its
+			// existing workspaces can be opened, but init provisions only sqlite
+			// and dolt; reject it rather than silently creating the wrong workspace.
+			if backends.Registered(backendFlag) {
+				return fmt.Errorf("backend %q cannot be created by bd init; it can only open an existing workspace (bd init provisions \"sqlite\", the default, or \"dolt\")", backendFlag)
+			}
 		}
 		for _, legacyFlag := range removedBackendInitFlags {
 			if cmd.Flags().Changed(legacyFlag.name) {
@@ -609,8 +611,7 @@ Non-interactive mode (--non-interactive or BD_NON_INTERACTIVE=1):
 			return fmt.Errorf("--team requires interactive prompts and cannot be used with --non-interactive")
 		}
 
-		// Dolt is the only supported backend.
-		backend := configfile.BackendDolt
+		backend := liteInitBackend(backendFlag) // lite: sqlite (default) or dolt
 
 		// Also treat BEADS_DOLT_SERVER_MODE=1 env var as --server.
 		if os.Getenv("BEADS_DOLT_SERVER_MODE") == "1" {
@@ -1208,6 +1209,10 @@ Non-interactive mode (--non-interactive or BD_NON_INTERACTIVE=1):
 		// flag that can interact with remote history must route through
 		// it rather than adding another `&& !someFlag` here.
 		syncResolutionURL, syncRemoteSource := resolveInitConfiguredSyncRemote(initRemote, initRemoteChanged, resolveSyncRemote)
+		if backend == configfile.BackendSQLite {
+			// lite: no Dolt remote, no refs/dolt/data probe, no clone.
+			syncResolutionURL, syncRemoteSource = "", initSyncRemoteNone
+		}
 		syncURL := syncResolutionURL
 		syncURLFromConfig := syncURL != "" && syncRemoteSource != initSyncRemoteNone // true when URL came from explicit user config
 		bootstrappedFromRemote := false
@@ -1260,7 +1265,7 @@ Non-interactive mode (--non-interactive or BD_NON_INTERACTIVE=1):
 					fmt.Printf("  %s Remote has no Dolt data yet; initialized a fresh local database\n", ui.RenderWarn("!"))
 				}
 			}
-		} else if syncRemoteSource == initSyncRemoteNone && !stealth && isGitRepo() && !isBareGitRepo() {
+		} else if backend != configfile.BackendSQLite && syncRemoteSource == initSyncRemoteNone && !stealth && isGitRepo() && !isBareGitRepo() {
 			if originURL, err := gitOriginGetURL(); err == nil && originURL != "" {
 				syncURL = normalizeRemoteURL(originURL)
 				syncURLFromGitOrigin = true
@@ -1409,7 +1414,8 @@ Non-interactive mode (--non-interactive or BD_NON_INTERACTIVE=1):
 			return &exitError{Code: 1}
 		}
 
-		initLock, err := acquireEmbeddedLock(beadsDir, initServerMode || initProxiedServer)
+		// lite: sqlite does not use the embedded-Dolt lock (SQLite locks itself).
+		initLock, err := acquireEmbeddedLock(beadsDir, initServerMode || initProxiedServer || backend == configfile.BackendSQLite)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			return &exitError{Code: 1}
@@ -1433,7 +1439,7 @@ Non-interactive mode (--non-interactive or BD_NON_INTERACTIVE=1):
 		// Gateway mode also skips this: it connects to a remote authenticating
 		// server and must not start a local shared server or create/write
 		// beads_global (see shouldInitSharedGlobalDB).
-		if !externalServer && shouldInitSharedGlobalDB(sharedServer, doltserver.IsSharedServerMode(), doltCfg.Gateway) {
+		if backend != configfile.BackendSQLite && !externalServer && shouldInitSharedGlobalDB(sharedServer, doltserver.IsSharedServerMode(), doltCfg.Gateway) {
 			if sharedDir, err := doltserver.SharedServerDir(); err == nil {
 				state, _ := doltserver.IsRunning(sharedDir)
 				if state == nil || !state.Running {
@@ -1473,7 +1479,7 @@ Non-interactive mode (--non-interactive or BD_NON_INTERACTIVE=1):
 			}
 		}
 
-		store, err := newDoltStore(ctx, doltCfg)
+		store, err := newInitStore(ctx, backend, beadsDir, doltCfg) // lite: sqlite or dolt
 		if err != nil {
 			// #4259: the remote-migrate gate refused to auto-apply pending
 			// migrations. When init just bootstrapped the clone, the REMOTE is
@@ -1514,7 +1520,7 @@ Non-interactive mode (--non-interactive or BD_NON_INTERACTIVE=1):
 		// Skipped in gateway mode: initGlobalDatabaseConfig rebuilds its config
 		// without the Gateway flag, so it would run create/schema/write operations
 		// against the authenticating gateway (see shouldInitSharedGlobalDB).
-		if shouldInitSharedGlobalDB(sharedServer, doltserver.IsSharedServerMode(), doltCfg.Gateway) {
+		if backend != configfile.BackendSQLite && shouldInitSharedGlobalDB(sharedServer, doltserver.IsSharedServerMode(), doltCfg.Gateway) {
 			initGlobalDatabaseConfig(ctx, doltCfg, quiet)
 		}
 
@@ -1531,7 +1537,7 @@ Non-interactive mode (--non-interactive or BD_NON_INTERACTIVE=1):
 		// verbatim in dolt_remotes and the *first* `bd dolt push` would take
 		// it to the remotesapi client — the #4421 storm, one leg further down
 		// (#5743).
-		if shouldWriteInitDoltRemote(doltCfg.Gateway, syncURL, syncFromRemote, syncURLFromConfig, syncURLFromGitOrigin, isDoltLocalOnly()) {
+		if backend != configfile.BackendSQLite && shouldWriteInitDoltRemote(doltCfg.Gateway, syncURL, syncFromRemote, syncURLFromConfig, syncURLFromGitOrigin, isDoltLocalOnly()) {
 			configureInitDoltRemote(ctx, store, doltRemoteURL(syncURL), quiet)
 		}
 
@@ -2329,7 +2335,7 @@ func init() {
 	initCmd.Flags().String("role", "", "Set beads role without prompting: \"maintainer\" or \"contributor\"")
 
 	// Backend selection: Dolt is the default and only supported backend.
-	initCmd.Flags().String("backend", "", "Storage backend: dolt (default). Removed backends (postgres, mysql, sqlite) print migration guidance.")
+	initCmd.Flags().String("backend", "", "Storage backend: sqlite (default) or dolt. Removed backends (postgres, mysql) print migration guidance.")
 	// Keep the short-lived removed-backend flags as hidden parser tombstones. A
 	// legacy invocation can then reach the backend rollback guidance instead of
 	// failing early with an opaque "unknown flag" error. The current backend rejects
