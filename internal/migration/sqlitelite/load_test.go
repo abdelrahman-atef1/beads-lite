@@ -69,7 +69,7 @@ func TestLoadVerifyRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	h, err := st.History(ctx, "p-1", 0)
+	h, err := st.History(ctx, "p-1")
 	if err != nil || len(h) != 3 || h[0].Issue.Title != "T \u0639\u0631\u0628\u064a" || h[2].Issue.Title != "T old" {
 		t.Fatalf("history: %v %v", err, h)
 	}

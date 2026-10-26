@@ -62,6 +62,8 @@ type LoadReport struct {
 	Rows         map[string]int `json:"rows"` // table -> rows written
 	DroppedKeys  map[string]int `json:"dropped_keys,omitempty"`
 	ExtraVersion []string       `json:"extra_version,omitempty"` // beads whose export differed from newest snapshot
+	// ExtraVersionCol maps each such bead to the first column that differed.
+	ExtraVersionCol map[string]string `json:"extra_version_col,omitempty"`
 }
 
 // issueKeyAlias maps an export JSON key to its issues column when the names differ.
@@ -101,7 +103,7 @@ type issueRec struct {
 }
 
 func load(ctx context.Context, in *Input, dest string) (*LoadReport, error) {
-	st, err := sqlitestore.Open(ctx, dest, sqlitestore.Options{Create: true, Actor: "lite-migrate"})
+	st, err := sqlitestore.Open(ctx, dest, sqlitestore.Options{Create: true, Actor: "lite-migrate", NoHistory: true}) // lite: versions are loaded explicitly
 	if err != nil {
 		return nil, err
 	}
@@ -516,10 +518,21 @@ func loadVersions(ctx context.Context, tx *sql.Tx, r *issueRec, b *BeadHistory, 
 		rep.Versions++
 		return nil
 	}
+	// lite: full-column versions (BeadHistory.Cols) when the extractor gave them.
+	var full []map[string]json.RawMessage
+	if b != nil && len(b.Cols) > 0 {
+		if err := json.Unmarshal(b.Cols, &full); err != nil || len(full) != len(snaps) {
+			full = nil
+		}
+	}
 	var newest map[string]any
 	for i := len(snaps) - 1; i >= 0; i-- {
 		s := snaps[i]
-		cols, _ := issueColumns(s.Issue, valid)
+		src := s.Issue
+		if full != nil {
+			src = full[i]
+		}
+		cols, _ := issueColumns(src, valid)
 		when := normTime(s.CommitDate)
 		if err := write(when, s.Committer, cols); err != nil {
 			return err
@@ -535,6 +548,10 @@ func loadVersions(ctx context.Context, tx *sql.Tx, r *issueRec, b *BeadHistory, 
 	if newest == nil || !sameVersion(newest, cur) {
 		if newest != nil {
 			rep.ExtraVersion = append(rep.ExtraVersion, r.id)
+			if rep.ExtraVersionCol == nil {
+				rep.ExtraVersionCol = map[string]string{}
+			}
+			rep.ExtraVersionCol[r.id] = firstDiffColumn(newest, cur)
 		}
 		upd, _ := r.cols["updated_at"].(string)
 		if upd == "" {
@@ -580,6 +597,35 @@ func splitVersion(cols map[string]any) ([]byte, textBundle) {
 	}
 	out, _ := json.Marshal(sc)
 	return out, b
+}
+
+// firstDiffColumn names the first column (sorted) on which two versions differ
+// the way sameVersion compares them: NULL and "" are equal.
+func firstDiffColumn(a, b map[string]any) string {
+	seen := map[string]bool{}
+	var names []string
+	for _, m := range []map[string]any{a, b} {
+		for k := range m {
+			if !seen[k] {
+				seen[k] = true
+				names = append(names, k)
+			}
+		}
+	}
+	sort.Strings(names)
+	norm := func(v any) string {
+		if v == nil || v == "" {
+			return ""
+		}
+		j, _ := json.Marshal(v)
+		return string(j)
+	}
+	for _, k := range names {
+		if norm(a[k]) != norm(b[k]) {
+			return k
+		}
+	}
+	return ""
 }
 
 func sameVersion(a, b map[string]any) bool {

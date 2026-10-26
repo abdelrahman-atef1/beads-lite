@@ -71,7 +71,7 @@ func fakeDolt(args []string) int {
 			os.Stdout.WriteString(`{"rows":[{"n":1}]}` + "\n")
 		case strings.Contains(s, "COUNT(*) AS n"):
 			os.Stdout.WriteString(`{"rows":[{"n":0}]}` + "\n")
-		case strings.HasPrefix(s, "SELECT d.to_id"):
+		case strings.HasPrefix(s, "SELECT d.*"):
 			base := `"to_title":"T","to_description":"","to_design":"","to_acceptance_criteria":"","to_notes":"","to_status":"open","to_priority":2,"to_issue_type":"task","to_assignee":null,"to_owner":null,"to_created_by":null,"to_created_at":"2026-01-01 00:00:00","to_updated_at":"2026-01-01 00:00:00","to_pinned":0,"to_close_reason":"","to_mol_type":""`
 			os.Stdout.WriteString(`{"rows":[{"to_id":"p-1","to_commit":"c1","to_commit_date":"2026-01-01 00:00:00.000","committer":"beads",` + base + `},` +
 				`{"to_id":"p-1","to_commit":"c2","to_commit_date":"2026-01-02 00:00:00.000","committer":"beads",` + base + `},` +

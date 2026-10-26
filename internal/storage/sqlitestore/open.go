@@ -22,6 +22,9 @@ type Options struct {
 	Actor string
 	// ReadOnly opens with query_only; the schema is never created.
 	ReadOnly bool
+	// NoHistory skips the lite_issue_versions writer. lite: the migration loader
+	// seeds versions from Dolt history itself and must not get a second set.
+	NoHistory bool
 }
 
 // openDB opens the pooled handle. The sqlite dialect translator (T005,
@@ -66,7 +69,7 @@ func Open(ctx context.Context, path string, opts Options) (*Store, error) {
 		return nil, fmt.Errorf("sqlitestore: %s: %w", path, err)
 	}
 	st := &Store{db: db, path: path, actor: opts.Actor}
-	if !opts.ReadOnly {
+	if !opts.ReadOnly && !opts.NoHistory {
 		st.EnableHistory() // T009: every write commit records lite_issue_versions rows
 	}
 	return st, nil

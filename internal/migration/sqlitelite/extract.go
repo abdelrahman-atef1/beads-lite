@@ -67,6 +67,10 @@ type BeadHistory struct {
 	// newest first: [{CommitHash,Committer,CommitDate,Issue}], one element
 	// per Dolt commit that changed the bead (UTC dates).
 	Snapshots json.RawMessage
+	// Cols is a JSON array parallel to Snapshots (newest first): every issues
+	// column of that version, keyed by column name. Snapshots carries only the
+	// fields of types.Issue; Cols is what the loader compares with the export.
+	Cols json.RawMessage
 	// Events is a JSON array in upstream `bd history --events --json` shape
 	// (types.Event), newest first.
 	Events json.RawMessage
@@ -349,12 +353,9 @@ var coveredTables = map[string]bool{
 	"schema_migrations": true, "ignored_schema_migrations": true,
 }
 
-const diffSQL = "SELECT d.to_id, d.to_commit, d.to_commit_date, l.committer, " +
-	"d.to_title, COALESCE(d.to_description,'') AS to_description, COALESCE(d.to_design,'') AS to_design, " +
-	"COALESCE(d.to_acceptance_criteria,'') AS to_acceptance_criteria, COALESCE(d.to_notes,'') AS to_notes, " +
-	"d.to_status, d.to_priority, d.to_issue_type, d.to_assignee, d.to_owner, d.to_created_by, " +
-	"d.to_estimated_minutes, d.to_created_at, d.to_updated_at, d.to_closed_at, d.to_close_reason, " +
-	"d.to_pinned, d.to_mol_type " +
+// lite: every column (d.*), not a fixed 18: a version that lacks a column the
+// export has never matches the export and gets a spurious final version.
+const diffSQL = "SELECT d.*, l.committer " +
 	"FROM dolt_diff_issues d JOIN dolt_log l ON l.commit_hash = d.to_commit " +
 	"WHERE d.diff_type <> 'removed' ORDER BY d.to_id, l.commit_order"
 
@@ -505,6 +506,7 @@ func (e *Extractor) buildBeads(r *Result, diff, events []map[string]any) error {
 		byID[b.ID] = b
 	}
 	snaps := map[string][]*storage.HistoryEntry{}
+	colsByID := map[string][]map[string]any{}
 	for _, d := range diff {
 		id := str(d["to_id"])
 		if byID[id] == nil {
@@ -529,6 +531,13 @@ func (e *Extractor) buildBeads(r *Result, diff, events []map[string]any) error {
 		if c := parseDolt(d["to_closed_at"]); !c.IsZero() {
 			is.ClosedAt = &c
 		}
+		cm := map[string]any{}
+		for k, v := range d {
+			if c, ok := strings.CutPrefix(k, "to_"); ok && c != "commit" && c != "commit_date" {
+				cm[c] = v
+			}
+		}
+		colsByID[id] = append(colsByID[id], cm)
 		snaps[id] = append(snaps[id], &storage.HistoryEntry{
 			CommitHash: str(d["to_commit"]), Committer: str(d["committer"]),
 			CommitDate: parseDolt(d["to_commit_date"]), Issue: is})
@@ -541,6 +550,11 @@ func (e *Extractor) buildBeads(r *Result, diff, events []map[string]any) error {
 			return err
 		}
 		byID[id].Snapshots = b
+		cl := colsByID[id]
+		reverse(cl)
+		if byID[id].Cols, err = json.Marshal(cl); err != nil {
+			return err
+		}
 	}
 	evs := map[string][]*types.Event{}
 	for _, d := range events {

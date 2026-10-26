@@ -297,7 +297,7 @@ func BuildIssueFilterClauses(query string, filter types.IssueFilter, tables Filt
 	} {
 		if tc.v != nil {
 			whereClauses = append(whereClauses, fmt.Sprintf("%s %s ?", tc.col, tc.op))
-			args = append(args, *tc.v)
+			args = append(args, *tc.v) // lite: bind time.Time (sqlite driver stores RFC3339 text), not a pre-formatted string
 		}
 	}
 
@@ -331,7 +331,7 @@ func BuildIssueFilterClauses(query string, filter types.IssueFilter, tables Filt
 	}
 	if filter.Overdue {
 		whereClauses = append(whereClauses, "due_at IS NOT NULL AND due_at < ? AND status != ?")
-		args = append(args, time.Now().UTC(), types.StatusClosed)
+		args = append(args, time.Now().UTC(), types.StatusClosed) // lite: bind time.Time, see above
 	}
 
 	var err error

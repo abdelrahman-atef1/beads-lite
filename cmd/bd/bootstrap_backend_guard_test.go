@@ -16,7 +16,7 @@ import (
 func TestBootstrapRejectsRemovedBackendsBeforeWorkspaceWrites(t *testing.T) {
 	bd := buildBDForInitTests(t)
 
-	for _, backend := range []string{configfile.BackendPostgres, configfile.BackendMySQL, configfile.BackendSQLite} {
+	for _, backend := range []string{configfile.BackendPostgres, configfile.BackendMySQL} {
 		backend := backend
 		for _, args := range [][]string{{"bootstrap", "--dry-run"}, {"bootstrap", "--yes"}} {
 			args := args

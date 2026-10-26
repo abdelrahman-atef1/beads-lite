@@ -13,7 +13,7 @@ import (
 
 func TestCommandStartupRejectsRemovedBackendsBeforeLocalWrites(t *testing.T) {
 	bd := buildBDForInitTests(t)
-	for _, backend := range []string{configfile.BackendPostgres, configfile.BackendMySQL, configfile.BackendSQLite} {
+	for _, backend := range []string{configfile.BackendPostgres, configfile.BackendMySQL} {
 		t.Run(backend, func(t *testing.T) {
 			root := t.TempDir()
 			beadsDir := filepath.Join(root, ".beads")
@@ -172,14 +172,6 @@ func TestLegacyInitFlagsReachRemovedBackendGuidance(t *testing.T) {
 			},
 			wants: []string{"no longer supported", "general-purpose server databases", "simple and resource-light", "dolt"},
 		},
-		{
-			backend: configfile.BackendSQLite,
-			args: []string{
-				"init", "--backend=sqlite",
-				"--sqlite-path=beads.db",
-			},
-			wants: []string{"no longer supported", "single engine", "dolt"},
-		},
 	}
 
 	for _, tt := range tests {
@@ -231,7 +223,7 @@ func TestDoltAdministrativeCommandsRejectRemovedBackends(t *testing.T) {
 	if err := os.MkdirAll(beadsDir, 0o755); err != nil {
 		t.Fatalf("create beads dir: %v", err)
 	}
-	if err := (&configfile.Config{Backend: configfile.BackendSQLite}).Save(beadsDir); err != nil {
+	if err := (&configfile.Config{Backend: configfile.BackendPostgres}).Save(beadsDir); err != nil {
 		t.Fatalf("save config: %v", err)
 	}
 
@@ -242,20 +234,20 @@ func TestDoltAdministrativeCommandsRejectRemovedBackends(t *testing.T) {
 			cmd.Env = append(removedBackendTestEnv(beadsDir), "BD_DISABLE_METRICS=1")
 			out, err := cmd.CombinedOutput()
 			if err == nil {
-				t.Fatalf("%q unexpectedly succeeded for removed backend %s: %s", strings.Join(command.args, " "), configfile.BackendSQLite, out)
+				t.Fatalf("%q unexpectedly succeeded for removed backend %s: %s", strings.Join(command.args, " "), configfile.BackendPostgres, out)
 			}
 
 			message := strings.ToLower(string(out))
-			for _, want := range removedBackendWantSubstrings(configfile.BackendSQLite) {
+			for _, want := range removedBackendWantSubstrings(configfile.BackendPostgres) {
 				if !strings.Contains(message, want) {
-					t.Errorf("%q error for %s missing %q: %s", strings.Join(command.args, " "), configfile.BackendSQLite, want, message)
+					t.Errorf("%q error for %s missing %q: %s", strings.Join(command.args, " "), configfile.BackendPostgres, want, message)
 				}
 			}
 
 			for _, name := range []string{"embeddeddolt", "dolt", "beads.db", ".local_version"} {
 				path := filepath.Join(beadsDir, name)
 				if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-					t.Fatalf("%q created local state for removed backend %s at %s (stat error: %v)", strings.Join(command.args, " "), configfile.BackendSQLite, path, statErr)
+					t.Fatalf("%q created local state for removed backend %s at %s (stat error: %v)", strings.Join(command.args, " "), configfile.BackendPostgres, path, statErr)
 				}
 			}
 		})
@@ -345,7 +337,7 @@ func removedBackendTestEnv(beadsDir string) []string {
 }
 
 func TestStoreFactoriesRemovedBackendsFailLoud(t *testing.T) {
-	for _, backend := range []string{configfile.BackendPostgres, configfile.BackendMySQL, configfile.BackendSQLite} {
+	for _, backend := range []string{configfile.BackendPostgres, configfile.BackendMySQL} {
 		t.Run(backend, func(t *testing.T) {
 			beadsDir := t.TempDir()
 			cfg := &configfile.Config{Backend: backend}
@@ -404,7 +396,7 @@ func TestRequireDoltBackend(t *testing.T) {
 		}
 	}
 
-	for _, backend := range []string{configfile.BackendPostgres, configfile.BackendMySQL, configfile.BackendSQLite} {
+	for _, backend := range []string{configfile.BackendPostgres, configfile.BackendMySQL} {
 		err := requireDoltBackend(&configfile.Config{Backend: backend}, beadsDir)
 		if err == nil || !strings.Contains(err.Error(), "no longer supported") || !strings.Contains(err.Error(), "export") {
 			t.Fatalf("removed backend %q guard error = %v, want rollback and migration guidance", backend, err)
@@ -412,12 +404,10 @@ func TestRequireDoltBackend(t *testing.T) {
 	}
 }
 
+// lite: sqlite is a supported engine again; only postgres and mysql are removed.
 // removedBackendWantSubstrings returns the guidance substrings every removed-backend
 // rejection must carry, including the backend-specific rationale marker.
 func removedBackendWantSubstrings(backend string) []string {
 	wants := []string{"no longer supported", "was not opened", "export", "dolt"}
-	if backend == configfile.BackendSQLite {
-		return append(wants, "single engine")
-	}
 	return append(wants, "general-purpose server databases", "simple and resource-light")
 }
