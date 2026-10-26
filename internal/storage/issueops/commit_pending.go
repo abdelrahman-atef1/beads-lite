@@ -5,7 +5,29 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"sync/atomic"
+
+	"github.com/steveyegge/beads/beadserrors"
 )
+
+// lite: doltSQL says whether the store behind these helpers has Dolt's version
+// control SQL (dolt_status, dolt_diff, dolt_history_*, AS OF, CALL DOLT_*).
+// It defaults to true so every Dolt backend is unchanged; the SQLite store
+// calls SetDoltSQL(false) once at open. One backend per process.
+var doltSQL atomic.Bool
+
+func init() { doltSQL.Store(true) }
+
+// SetDoltSQL records whether the process's store has Dolt version-control SQL.
+func SetDoltSQL(available bool) { doltSQL.Store(available) }
+
+// DoltSQL reports whether Dolt version-control SQL is available.
+func DoltSQL() bool { return doltSQL.Load() }
+
+// errNoDoltSQL is the upstream "unsupported for this backend" refusal.
+func errNoDoltSQL(op string) error {
+	return &beadserrors.ErrUnsupported{Op: op, Backend: "sqlite"}
+}
 
 // SQLQuerier is the subset of *sql.Tx / *sql.DB needed by the commit helpers.
 type SQLQuerier interface {
@@ -16,6 +38,9 @@ type SQLQuerier interface {
 // HasPendingChanges checks whether there are any committable changes in the
 // Dolt working set, excluding tables matched by dolt_ignore.
 func HasPendingChanges(ctx context.Context, db SQLQuerier) (bool, error) {
+	if !DoltSQL() { // lite: no working set to commit
+		return false, nil
+	}
 	var count int
 	err := db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM dolt_status s
@@ -44,6 +69,9 @@ func HasPendingChanges(ctx context.Context, db SQLQuerier) (bool, error) {
 // "nothing to commit" warning that floods the Dolt log at reconcile cadence.
 // Checking the staged set AFTER DOLT_ADD captures exactly what '-m' will commit.
 func HasStagedChanges(ctx context.Context, db SQLQuerier) (bool, error) {
+	if !DoltSQL() { // lite: nothing is ever staged
+		return false, nil
+	}
 	var count int
 	err := db.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM dolt_status WHERE staged = 1").Scan(&count)
@@ -60,6 +88,9 @@ func HasStagedChanges(ctx context.Context, db SQLQuerier) (bool, error) {
 func BuildBatchCommitMessage(ctx context.Context, db SQLQuerier, actor string) string {
 	if actor == "" {
 		actor = "bd"
+	}
+	if !DoltSQL() { // lite: no dolt_diff to summarise
+		return fmt.Sprintf("bd: batch commit by %s", actor)
 	}
 
 	var added, modified, removed int

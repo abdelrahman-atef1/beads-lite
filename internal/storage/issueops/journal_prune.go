@@ -390,7 +390,11 @@ func eventsPruneFloorReadersInTx(ctx context.Context, tx DBTX, retainRows int) (
 	readDaysFloor := func(cutoff time.Time) (int64, bool, error) {
 		// MIN over no matching rows yields one NULL row, not ErrNoRows.
 		var floorSeq sql.NullInt64
-		scanErr := tx.QueryRowContext(ctx, EventsPruneDaysFloorQuery(), cutoff).Scan(&floorSeq)
+		var bind any = cutoff
+		if !DoltSQL() { // lite: SQLite stores ts as text; compare like with like (UTC, second precision)
+			bind = cutoff.UTC().Format("2006-01-02 15:04:05")
+		}
+		scanErr := tx.QueryRowContext(ctx, EventsPruneDaysFloorQuery(), bind).Scan(&floorSeq)
 		if errors.Is(scanErr, sql.ErrNoRows) {
 			return 0, false, nil
 		}
