@@ -92,8 +92,7 @@ func stripRowLocks(sql string) string {
 			if i < 0 || (i > 0 && isIdentByte(sql[i-1])) {
 				break
 			}
-			sql = strings.TrimRight(sql[:i], " 	
-") + sql[i+len(kw):]
+			sql = strings.TrimRight(sql[:i], " \t\r\n") + sql[i+len(kw):]
 		}
 	}
 	return sql
@@ -204,7 +203,7 @@ func dateFormatArgs(args []string) string {
 		return loud
 	}
 	f := strings.TrimSpace(args[1])
-	if len(f) < 2 || f[0] != ''' || f[len(f)-1] != ''' {
+	if len(f) < 2 || f[0] != '\'' || f[len(f)-1] != '\'' {
 		return loud
 	}
 	f = f[1 : len(f)-1]
