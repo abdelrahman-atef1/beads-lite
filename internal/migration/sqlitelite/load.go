@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/steveyegge/beads/internal/storage/depid"
 	"github.com/steveyegge/beads/internal/storage/kvkeys"
 	"github.com/steveyegge/beads/internal/storage/sqlitestore"
 	"github.com/steveyegge/beads/internal/types"
@@ -390,7 +391,7 @@ func loadChildren(ctx context.Context, tx *sql.Tx, r *issueRec, ids map[string]b
 	}
 	for _, d := range deps {
 		row := map[string]any{
-			"id": uuidFrom("dep", r.id, d.DependsOn, d.Type), "issue_id": r.id,
+			"id": depid.New(r.id, d.DependsOn), "issue_id": r.id,
 			"type": d.Type, "created_at": normTime(d.CreatedAt), "created_by": d.CreatedBy,
 			"thread_id": d.ThreadID, "metadata": "{}",
 		}

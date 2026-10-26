@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/steveyegge/beads/internal/storage/depid"
 	"github.com/steveyegge/beads/internal/storage/sqlitestore"
 )
 
@@ -169,5 +171,44 @@ func TestSameJSONIgnoresRevisionAndDefaultWorkType(t *testing.T) {
 	}
 	if sameJSON(a, []byte(`[{"id":"x","work_type":"other","dependencies":[{"id":"y"}]}]`)) {
 		t.Fatal("a real work_type difference must count")
+	}
+}
+
+// Regression (show --json parity, whisper-flow-6bb.9): upstream 1.3.1 lists
+// dependencies in primary-key order, and its key is depid.New(issue, target),
+// not the loader's own hash. The export carries no ids, so the loader must
+// derive the same ids and the fork must read in id order.
+func TestDependencyOrderMatchesDoltPrimaryKeyOrder(t *testing.T) {
+	ctx := context.Background()
+	targets := []string{"q-a", "q-b", "q-c", "q-d", "q-e"} // export order = sorted by target
+	var jsonl, deps []string
+	for _, id := range targets {
+		jsonl = append(jsonl, `{"_type":"issue","id":"`+id+`","title":"t","status":"open","priority":2,"issue_type":"task","created_at":"2026-10-25T07:51:45Z","updated_at":"2026-10-25T07:51:45Z"}`)
+		deps = append(deps, `{"issue_id":"q-x","depends_on_id":"`+id+`","type":"blocks","created_at":"2026-10-25T07:51:45Z","created_by":"c","metadata":"{}"}`)
+	}
+	jsonl = append(jsonl, `{"_type":"issue","id":"q-x","title":"x","status":"open","priority":2,"issue_type":"task","created_at":"2026-10-25T07:51:45Z","updated_at":"2026-10-25T07:51:45Z","dependencies":[`+strings.Join(deps, ",")+`]}`)
+	in := &Input{IssuesJSONL: []byte(strings.Join(jsonl, "\n") + "\n"), Config: map[string]any{"issue_prefix": "q"}}
+	dest := filepath.Join(t.TempDir(), "beads.db")
+	if _, err := Load(ctx, in, dest); err != nil {
+		t.Fatal(err)
+	}
+	st, err := sqlitestore.Open(ctx, dest, sqlitestore.Options{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	got, err := st.GetDependenciesWithMetadata(ctx, "q-x")
+	if err != nil || len(got) != len(targets) {
+		t.Fatalf("deps: %v %d", err, len(got))
+	}
+	want := append([]string(nil), targets...)
+	sort.Slice(want, func(i, j int) bool { return depid.New("q-x", want[i]) < depid.New("q-x", want[j]) })
+	for i, d := range got {
+		if d.ID != want[i] {
+			t.Fatalf("position %d: got %s want %s (order must follow depid primary key)", i, d.ID, want[i])
+		}
+	}
+	if want[0] == targets[0] && want[1] == targets[1] && want[2] == targets[2] {
+		t.Fatal("test data does not exercise ordering; pick other targets")
 	}
 }
