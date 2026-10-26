@@ -30,7 +30,11 @@ type MigrateOptions struct {
 	ForkBin string
 	// WorkDir holds the extractor's copies; created fresh, removed after.
 	WorkDir string
+	// Workers is the number of parallel upstream bd copies for the show diff (default 4).
 	Workers int
+	// DoltBin overrides the pinned Dolt CLI; OracleBeads the extractor oracle size.
+	DoltBin     string
+	OracleBeads int
 	// Tables supplies the rows the extractor cannot read (the pluggable seam:
 	// local_metadata, leases, journal, custom_statuses, ...). Called after
 	// extraction; its keys count as covered.
@@ -107,7 +111,7 @@ func Migrate(ctx context.Context, o MigrateOptions) (*MigrateReport, error) {
 	if o.WorkDir == "" {
 		o.WorkDir = filepath.Join(os.TempDir(), fmt.Sprintf("lite-migrate-%d", os.Getpid()))
 	}
-	e, err := New(Options{BdBin: o.BdBin, StoreCopy: o.Project, WorkDir: o.WorkDir, Workers: o.Workers, Progress: o.Progress})
+	e, err := New(Options{BdBin: o.BdBin, StoreCopy: o.Project, WorkDir: o.WorkDir, DoltBin: o.DoltBin, OracleBeads: o.OracleBeads, Progress: o.Progress})
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +123,9 @@ func Migrate(ctx context.Context, o MigrateOptions) (*MigrateReport, error) {
 	rep := &MigrateReport{Project: o.Project, Extract: res.Timing, Uncovered: res.Uncovered, Accepted: o.Accept, Load: nil}
 	in := InputFromResult(res)
 	covered := append([]string(nil), o.Accept...)
+	for k := range res.Tables { // rows the extractor read itself
+		covered = append(covered, k)
+	}
 	if o.Tables != nil {
 		tabs, err := o.Tables(res)
 		if err != nil {
@@ -128,13 +135,6 @@ func Migrate(ctx context.Context, o MigrateOptions) (*MigrateReport, error) {
 			in.Tables[k] = v
 			covered = append(covered, k)
 		}
-	}
-	if _, own := in.Tables["leases"]; !own {
-		// bd 1.3.1 has no reader for the leases table, but the export carries
-		// lease_expires_at / heartbeat_at / lease_granted_node per issue and
-		// the loader rebuilds a lease row from them (holder = assignee).
-		covered = append(covered, "leases")
-		rep.Notes = append(rep.Notes, "leases rebuilt from export lease fields (holder = assignee, granted_at = heartbeat_at)")
 	}
 	if err := CheckUncovered(res, covered); err != nil {
 		return rep, err
@@ -158,13 +158,17 @@ func Migrate(ctx context.Context, o MigrateOptions) (*MigrateReport, error) {
 			cleanup()
 			return rep, errors.New("sqlitelite: ForkBin is required for the show --json diff (or SkipShow)")
 		}
-		show, done, err := e.showFunc(o.ForkBin, beadsDir, staging)
+		workers := o.Workers
+		if workers < 1 {
+			workers = 4
+		}
+		show, done, err := e.showFunc(o.ForkBin, beadsDir, staging, workers)
 		if err != nil {
 			cleanup()
 			return rep, err
 		}
 		defer done()
-		vo.Show, vo.ShowWorkers = show, len(e.copies)
+		vo.Show, vo.ShowWorkers = show, workers
 	}
 	vr, err := Verify(ctx, in, staging, vo)
 	if err != nil {
@@ -188,7 +192,7 @@ func Migrate(ctx context.Context, o MigrateOptions) (*MigrateReport, error) {
 // showFunc builds the pluggable show diff: old side = upstream bd on one of
 // the extractor's copies, new side = the fork on a scratch project holding a
 // copy of the staging database and a metadata.json with backend sqlite.
-func (e *Extractor) showFunc(forkBin, beadsDir, staging string) (ShowFunc, func(), error) {
+func (e *Extractor) showFunc(forkBin, beadsDir, staging string, workers int) (ShowFunc, func(), error) {
 	stage := filepath.Join(e.o.WorkDir+"-newside", "p")
 	if err := os.MkdirAll(filepath.Join(stage, ".beads"), 0o755); err != nil {
 		return nil, nil, err
@@ -208,14 +212,22 @@ func (e *Extractor) showFunc(forkBin, beadsDir, staging string) (ShowFunc, func(
 		done()
 		return nil, nil, err
 	}
-	pool := make(chan string, len(e.copies))
-	for _, c := range e.copies {
+	// Embedded Dolt serialises per folder, so give each worker its own copy.
+	pool := make(chan string, workers)
+	for i := 0; i < workers; i++ {
+		c := filepath.Join(e.o.WorkDir+"-show", fmt.Sprintf("w%d", i))
+		if err := copyBeads(e.root, c); err != nil {
+			done()
+			return nil, nil, err
+		}
 		pool <- c
 	}
+	prev := done
+	done = func() { prev(); _ = os.RemoveAll(e.o.WorkDir + "-show") }
 	return func(id string) ([]byte, []byte, error) {
 		root := <-pool
 		defer func() { pool <- root }()
-		oldOut, err := e.run(root, "show", id, "--json")
+		oldOut, err := runExe(e.o.BdBin, root, "show", id, "--json")
 		if err != nil {
 			return nil, nil, err
 		}

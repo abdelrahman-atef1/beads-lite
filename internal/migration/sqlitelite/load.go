@@ -47,7 +47,11 @@ type Input struct {
 
 // InputFromResult adapts the extractor's output.
 func InputFromResult(r *Result) *Input {
-	return &Input{IssuesJSONL: r.IssuesJSONL, Config: r.Config, Beads: r.Beads, Tables: map[string][]map[string]any{}}
+	in := &Input{IssuesJSONL: r.IssuesJSONL, Config: r.Config, Beads: r.Beads, Tables: map[string][]map[string]any{}}
+	for t, rows := range r.Tables {
+		in.Tables[t] = rows
+	}
+	return in
 }
 
 // LoadReport counts what was written.
@@ -284,7 +288,7 @@ func isTimeCol(c string) bool {
 
 // normTime returns RFC3339 UTC when s parses, else s unchanged.
 func normTime(s string) string {
-	for _, l := range []string{time.RFC3339Nano, time.RFC3339} {
+	for _, l := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05.999999999", "2006-01-02 15:04:05"} {
 		if t, err := time.Parse(l, s); err == nil {
 			return t.UTC().Format(time.RFC3339)
 		}
