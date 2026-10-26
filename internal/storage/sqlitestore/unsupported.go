@@ -154,7 +154,7 @@ func (s *Store) GetConflictRows(ctx context.Context, table string) ([]storage.Co
 }
 
 func (s *Store) GetMergeBlockers(ctx context.Context) (storage.MergeBlockers, error) {
-	return nil, unsupported("GetMergeBlockers")
+	return storage.MergeBlockers{}, unsupported("GetMergeBlockers")
 }
 
 func (s *Store) ResolveConflictRows(ctx context.Context, table string, keys []string, strategy string) (int, error) {

@@ -3,6 +3,10 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"regexp"
+
+	"modernc.org/sqlite"
 
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/storage/issueops"
@@ -46,4 +50,25 @@ func (s *Store) RecomputeAllBlocked(ctx context.Context) (int, error) {
 		return e
 	})
 	return int(changed), err
+}
+
+func init() {
+	// MySQL's `x REGEXP pattern` becomes regexp(pattern, x) in SQLite, which
+	// has no built-in. MySQL matching is case-insensitive by default.
+	sqlite.MustRegisterDeterministicScalarFunction("regexp", 2,
+		func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+			pat, ok1 := args[0].(string)
+			val, ok2 := args[1].(string)
+			if !ok1 || !ok2 {
+				return nil, nil
+			}
+			re, err := regexp.Compile("(?i)" + pat)
+			if err != nil {
+				return nil, err
+			}
+			if re.MatchString(val) {
+				return int64(1), nil
+			}
+			return int64(0), nil
+		})
 }
