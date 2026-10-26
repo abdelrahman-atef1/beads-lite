@@ -13,9 +13,14 @@ import (
 // boolCols are 0/1 columns whose Issue fields are bool.
 var boolCols = []string{"is_blocked", "ephemeral", "no_history", "pinned", "is_template"}
 
-// History returns the versions of one issue, newest first (Dolt order), at
+// History implements storage.HistoryViewer: every version of one issue.
+func (s *Store) History(ctx context.Context, id string) ([]*storage.HistoryEntry, error) {
+	return s.HistoryLimit(ctx, id, 0)
+}
+
+// HistoryLimit returns the versions of one issue, newest first (Dolt order), at
 // most limit when limit > 0. An unknown id yields an empty slice, no error.
-func (s *Store) History(ctx context.Context, id string, limit int) ([]*storage.HistoryEntry, error) {
+func (s *Store) HistoryLimit(ctx context.Context, id string, limit int) ([]*storage.HistoryEntry, error) {
 	q := `SELECT v.seq, v.committed_at, v.committer, v.scalars, t.body
 	      FROM lite_issue_versions v JOIN lite_version_text t ON t.hash = v.text_hash
 	      WHERE v.issue_id = ? ORDER BY v.seq DESC`

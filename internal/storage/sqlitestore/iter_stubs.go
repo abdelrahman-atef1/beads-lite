@@ -62,16 +62,7 @@ func (s *Store) IterIssueComments(ctx context.Context, issueID string) (storage.
 	return storage.NewSliceIter(cs), nil
 }
 
-// IterEvents streams audit-trail events for an issue (slice-then-walk).
-//
-// TODO(be-yinl4d-iter): replace with a fully streaming implementation.
-func (s *Store) IterEvents(ctx context.Context, issueID string, limit int) (storage.Iter[types.Event], error) {
-	ev, err := s.GetEvents(ctx, issueID, limit)
-	if err != nil {
-		return nil, err
-	}
-	return storage.NewSliceIter(ev), nil
-}
+// IterEvents lives in history.go (T009).
 
 // IterAllEventsSince streams every audit-trail event newer than `since`
 // (slice-then-walk).

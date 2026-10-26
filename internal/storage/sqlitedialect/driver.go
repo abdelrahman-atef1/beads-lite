@@ -16,33 +16,56 @@ func Open(dsn string) (*sql.DB, error) {
 	return sql.OpenDB(&connector{dsn: dsn}), nil
 }
 
-// connector opens a fresh modernc connection per Connect. A zero-value
-// modernc Driver carries no user-registered udfs/collations/hooks, which is exactly
-// what the wedge wants; connection config travels in the DSN.
+// registered is modernc's process-wide driver instance (the one behind
+// sql.Open("sqlite", ...)). It is the instance that carries user-registered
+// udfs such as the regexp() the store registers for MySQL's REGEXP; a
+// zero-value sqlite.Driver would not see them. sql.Open does not connect.
+var registered = func() driver.Driver {
+	db, err := sql.Open("sqlite", "")
+	if err != nil {
+		return &sqlite.Driver{}
+	}
+	return db.Driver()
+}()
+
+// connector opens a fresh modernc connection per Connect on the registered
+// driver; connection config travels in the DSN.
 type connector struct{ dsn string }
 
 func (c *connector) Connect(_ context.Context) (driver.Conn, error) {
-	base, err := (&sqlite.Driver{}).Open(c.dsn)
+	base, err := registered.Open(c.dsn)
 	if err != nil {
 		return nil, err
 	}
 	return &conn{base: base}, nil
 }
 
-func (c *connector) Driver() driver.Driver { return &sqlite.Driver{} }
+func (c *connector) Driver() driver.Driver { return registered }
 
 type conn struct{ base driver.Conn }
 
 func (c *conn) Prepare(query string) (driver.Stmt, error) {
-	return c.base.Prepare(Translate(query))
+	st, err := c.base.Prepare(Translate(query))
+	if err != nil {
+		return nil, err
+	}
+	return wrapStmt(st), nil
 }
 
 func (c *conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
 	q := Translate(query)
 	if p, ok := c.base.(driver.ConnPrepareContext); ok {
-		return p.PrepareContext(ctx, q)
+		st, err := p.PrepareContext(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		return wrapStmt(st), nil
 	}
-	return c.base.Prepare(q)
+	st, err := c.base.Prepare(q)
+	if err != nil {
+		return nil, err
+	}
+	return wrapStmt(st), nil
 }
 
 func (c *conn) Close() error { return c.base.Close() }

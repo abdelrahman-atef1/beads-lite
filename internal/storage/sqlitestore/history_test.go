@@ -43,7 +43,7 @@ func TestOneVersionPerCommandNewestFirst(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	h, err := s.History(ctx, "r-1", 0)
+	h, err := s.HistoryLimit(ctx, "r-1", 0)
 	if err != nil || len(h) != 2 {
 		t.Fatalf("len=%d err=%v", len(h), err)
 	}
@@ -59,7 +59,7 @@ func TestOneVersionPerCommandNewestFirst(t *testing.T) {
 	if string(h[0].Issue.Metadata) != `{"asked_at":"2026-10-25T09:00:00Z"}` || h[0].Issue.Description != "d" || h[0].Issue.CreatedAt.IsZero() {
 		t.Fatalf("rebuilt fields: %+v", h[0].Issue)
 	}
-	if l, _ := s.History(ctx, "r-1", 1); len(l) != 1 || l[0].CommitHash != h[0].CommitHash {
+	if l, _ := s.HistoryLimit(ctx, "r-1", 1); len(l) != 1 || l[0].CommitHash != h[0].CommitHash {
 		t.Fatalf("limit: %v", l)
 	}
 	var n int
@@ -86,7 +86,7 @@ func TestNoVersionOnRollbackAndUnknownID(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("versions after rollback: %d", n)
 	}
-	h, err := s.History(ctx, "nope", 0)
+	h, err := s.HistoryLimit(ctx, "nope", 0)
 	if err != nil || h == nil || len(h) != 0 {
 		t.Fatalf("unknown id: %v %v", h, err)
 	}
@@ -136,7 +136,7 @@ func TestGateFieldsAndEvents(t *testing.T) {
 			return err
 		})
 	}
-	h, _ := s.History(ctx, "r-4", 0)
+	h, _ := s.HistoryLimit(ctx, "r-4", 0)
 	var since string
 	run := 0
 	for _, e := range h {

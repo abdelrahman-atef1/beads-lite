@@ -15,6 +15,8 @@ import (
 //     of failing with SQLITE_BUSY; a write is milliseconds.
 //   - case_sensitive_like(1): LIKE parity with Dolt's binary collation.
 //   - _txlock=immediate: writers take the lock up front (no upgrade deadlock).
+//   - _timezone=UTC: bound time.Time values are converted to UTC before they are
+//     formatted; without it a local-zone time compares against UTC text wrongly.
 //   - _time_format=datetime: time.Time is stored as "YYYY-MM-DD HH:MM:SS" (UTC,
 //     second precision) like Dolt datetime(0), so strftime and DEFAULT
 //     CURRENT_TIMESTAMP rows sort and parse the same way (ADR 0001 section 2).
@@ -27,5 +29,5 @@ func dsn(path string) string {
 	p = (&url.URL{Path: p}).EscapedPath()
 	return "file:" + p + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)" +
 		"&_pragma=busy_timeout(5000)&_pragma=case_sensitive_like(1)" +
-		"&_txlock=immediate&_time_format=datetime"
+		"&_txlock=immediate&_time_format=datetime&_timezone=UTC"
 }
