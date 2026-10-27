@@ -237,6 +237,12 @@ Examples:
 		if cfg == nil {
 			cfg = configfile.DefaultConfig()
 		}
+		if cfg != nil && cfg.GetBackend() == configfile.BackendSQLite { // lite: T047
+			if err := liteBootstrapSQLite(cmd.Context(), beadsDir, dryRun); err != nil {
+				return HandleError("Bootstrap failed: %v", err)
+			}
+			return nil
+		}
 		if err := requireBootstrapDoltBackend(cfg, beadsDir); err != nil {
 			return HandleError("%v", err)
 		}
