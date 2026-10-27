@@ -210,7 +210,7 @@ func ScanIssueFrom(s IssueScanner, extra ...any) (*types.Issue, error) {
 	if deferUntil.Valid {
 		issue.DeferUntil = &deferUntil.Time
 	}
-	if workType.Valid {
+	if workType.Valid && workType.String != string(types.WorkTypeMutex) { // lite D-1: mutex is the default and is not printed (T049)
 		issue.WorkType = types.WorkType(workType.String)
 	}
 	if sourceSystem.Valid {
@@ -383,7 +383,7 @@ func ScanIssueLiteFrom(s IssueScanner, extra ...any) (*types.Issue, error) {
 	if deferUntil.Valid {
 		issue.DeferUntil = &deferUntil.Time
 	}
-	if workType.Valid {
+	if workType.Valid && workType.String != string(types.WorkTypeMutex) { // lite D-1: mutex is the default and is not printed (T049)
 		issue.WorkType = types.WorkType(workType.String)
 	}
 	if sourceSystem.Valid {
