@@ -35,6 +35,16 @@ var localCommands = map[string]bool{"lite-switch": true, "version": true, "help"
 // ExitFunc is replaced in tests.
 var ExitFunc = os.Exit
 
+// Guard, when set, is asked before a call is handed to upstream. A non-nil
+// error stops the call: it is printed and the process exits with
+// GuardExitCode. main wires the beads-lite switch notice and freeze here
+// (company-88mo): an embedded-Dolt project is exactly the one that is frozen
+// during a switch, and upstream knows nothing about the freeze.
+var Guard func(beadsDir string, args []string) error
+
+// GuardExitCode is the exit status of a refused call (switch.md: 3).
+const GuardExitCode = 3
+
 // MaybeExec runs upstream and exits with its code when the project in the
 // current directory is embedded Dolt. On any doubt (no project found, a
 // beads.db present, unreadable metadata) it returns and the fork proceeds.
@@ -50,6 +60,13 @@ func MaybeExec() {
 	dir, ok := FindBeadsDir(cwd, os.Getenv("BEADS_DIR"))
 	if !ok || !IsEmbeddedDolt(dir) {
 		return
+	}
+	if Guard != nil {
+		if gerr := Guard(dir, args); gerr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", gerr)
+			ExitFunc(GuardExitCode)
+			return
+		}
 	}
 	code, err := Run(UpstreamPath(), args, os.Environ())
 	if err != nil {

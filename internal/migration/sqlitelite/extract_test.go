@@ -2,6 +2,7 @@ package sqlitelite
 
 import (
 	"encoding/json"
+	"github.com/steveyegge/beads/internal/storage/dbproxy/util"
 	"io"
 	"os"
 	"path/filepath"
@@ -211,5 +212,43 @@ func TestExtractCorpus(t *testing.T) {
 	}
 	if runErr != nil {
 		t.Fatal(runErr)
+	}
+}
+
+// company-07dn: while a switch is frozen the holder byte-range locks
+// embeddeddolt/.lock (Windows); copyBeads must skip it and the hold marker
+// instead of failing on the read.
+func TestCopyBeadsSkipsFreezeHolderFiles(t *testing.T) {
+	src, dst := t.TempDir(), t.TempDir()
+	dolt := filepath.Join(src, ".beads", "embeddeddolt")
+	if err := os.MkdirAll(dolt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		filepath.Join(dolt, "data.bin"):                  "data",
+		filepath.Join(src, ".beads", "metadata.json"):    "{}",
+		filepath.Join(src, ".beads", "lite-switch.hold"): "1",
+		filepath.Join(src, ".beads", "lite-switch.json"): "{}",
+		filepath.Join(dolt, ".lock"):                     "lock-bytes",
+	} {
+		if err := os.WriteFile(name, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lk, err := util.TryLock(filepath.Join(dolt, ".lock")) // what `lite-switch hold` does
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lk.Unlock()
+	if err := copyBeads(src, dst); err != nil {
+		t.Fatalf("copyBeads while frozen: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dst, ".beads", "embeddeddolt", "data.bin")); string(b) != "data" {
+		t.Fatal("data not copied")
+	}
+	for _, skipped := range []string{filepath.Join("embeddeddolt", ".lock"), "lite-switch.hold"} {
+		if _, err := os.Stat(filepath.Join(dst, ".beads", skipped)); err == nil {
+			t.Fatalf("%s must not be copied", skipped)
+		}
 	}
 }

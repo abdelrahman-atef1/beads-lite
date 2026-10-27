@@ -47,12 +47,24 @@ type ShowFunc func(id string) (oldJSON, newJSON []byte, err error)
 type VerifyOptions struct {
 	ShowWorkers int      // parallel Show calls (default 1)
 	Show        ShowFunc // nil: show diff is reported "skipped" and does not count as passed
+	// ShowBatch, when set, is tried first for ShowBatchSize ids at a time (one
+	// process per side per batch instead of per bead). The comparison per bead
+	// is identical; whatever the batch cannot answer goes through Show.
+	ShowBatch     ShowBatchFunc
+	ShowBatchSize int // default 25
 	// Tables are the extra rows passed to Load; used for the expected counts.
 	Tables map[string][]map[string]any
 	// Loaded is the loader's report; its appended-version list adjusts the
 	// expected version count.
 	Loaded *LoadReport
 }
+
+// ShowBatchFunc returns the `show --json` element of every id it could find,
+// keyed by id, from the old and the new store, using one process per side for
+// the whole batch. An id missing from a side is simply absent from that map;
+// Verify then asks the single-id ShowFunc about it, so a missing bead fails
+// exactly as before.
+type ShowBatchFunc func(ids []string) (oldJSON, newJSON map[string][]byte, err error)
 
 // Verify opens dbPath read-only and checks it against in.
 func Verify(ctx context.Context, in *Input, dbPath string, o VerifyOptions) (*VerifyReport, error) {
@@ -128,31 +140,70 @@ func Verify(ctx context.Context, in *Input, dbPath string, o VerifyOptions) (*Ve
 		}
 	}
 
-	if o.Show != nil {
+	if o.Show != nil || o.ShowBatch != nil {
 		w := o.ShowWorkers
 		if w < 1 {
 			w = 1
 		}
 		msgs := make([]string, len(rep.Beads))
+		compare := func(j int, a, b []byte, err error) {
+			id := rep.Beads[j].ID
+			if err != nil {
+				msgs[j] = "show " + id + ": " + err.Error()
+			} else if !sameJSON(a, b) {
+				msgs[j] = "show --json differs for " + id
+			}
+		}
+		single := func(j int) {
+			if o.Show == nil {
+				msgs[j] = "show " + rep.Beads[j].ID + ": no single-id show available"
+				return
+			}
+			a, b, err := o.Show(rep.Beads[j].ID)
+			compare(j, a, b, err)
+		}
+		size := o.ShowBatchSize
+		if size < 1 {
+			size = 25
+		}
+		if o.ShowBatch == nil {
+			size = 1
+		}
 		var wg sync.WaitGroup
-		next := make(chan int)
+		next := make(chan [2]int)
 		for i := 0; i < w; i++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				for j := range next {
-					id := rep.Beads[j].ID
-					a, b, err := o.Show(id)
-					if err != nil {
-						msgs[j] = "show " + id + ": " + err.Error()
-					} else if !sameJSON(a, b) {
-						msgs[j] = "show --json differs for " + id
+				for r := range next {
+					if o.ShowBatch == nil {
+						single(r[0])
+						continue
+					}
+					ids := make([]string, 0, r[1]-r[0])
+					for j := r[0]; j < r[1]; j++ {
+						ids = append(ids, rep.Beads[j].ID)
+					}
+					oldM, newM, err := o.ShowBatch(ids)
+					for j := r[0]; j < r[1]; j++ {
+						id := rep.Beads[j].ID
+						a, okA := oldM[id]
+						b, okB := newM[id]
+						if err != nil || !okA || !okB {
+							single(j)
+							continue
+						}
+						compare(j, a, b, nil)
 					}
 				}
 			}()
 		}
-		for j := range rep.Beads {
-			next <- j
+		for lo := 0; lo < len(rep.Beads); lo += size {
+			hi := lo + size
+			if hi > len(rep.Beads) {
+				hi = len(rep.Beads)
+			}
+			next <- [2]int{lo, hi}
 		}
 		close(next)
 		wg.Wait()

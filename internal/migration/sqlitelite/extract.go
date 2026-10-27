@@ -263,7 +263,11 @@ func (e *Extractor) prepare() error {
 	return fmt.Errorf("sqlitelite: no Dolt database under %s", base)
 }
 
-// copyBeads copies <src>/.beads to <dst>/.beads. The busy noms/LOCK file is skipped.
+// copyBeads copies <src>/.beads to <dst>/.beads. The busy noms/LOCK file is
+// skipped, and so are the freeze holder's files (company-07dn): while a switch
+// is frozen the holder byte-range locks embeddeddolt/.lock (Windows), which
+// makes any read of it fail, and lite-switch.hold is only its live marker.
+// Neither is data.
 func copyBeads(src, dst string) error {
 	from := filepath.Join(src, ".beads")
 	to := filepath.Join(dst, ".beads")
@@ -276,7 +280,7 @@ func copyBeads(src, dst string) error {
 		if d.IsDir() {
 			return os.MkdirAll(t, 0o755)
 		}
-		if !d.Type().IsRegular() || d.Name() == "LOCK" {
+		if !d.Type().IsRegular() || d.Name() == "LOCK" || d.Name() == ".lock" || d.Name() == "lite-switch.hold" {
 			return nil
 		}
 		in, err := os.Open(p)

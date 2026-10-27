@@ -19,6 +19,11 @@ func TestMain(m *testing.M) {
 		os.Exit(7)
 	case os.Getenv("PT_MODE") == "fork":
 		os.Args = append([]string{"bd"}, strings.Fields(os.Getenv("PT_ARGS"))...)
+		if os.Getenv("PT_GUARD") != "" {
+			Guard = func(dir string, args []string) error {
+				return fmt.Errorf("guard refused %s in %s", args[0], filepath.Base(dir))
+			}
+		}
 		MaybeExec()
 		fmt.Print("FORK-CONTINUES")
 		os.Exit(0)
@@ -161,5 +166,19 @@ func TestMaybeExecMissingUpstreamFailsClearly(t *testing.T) {
 	_, errOut, code := fork(t, root, "list", EnvUpstream+"="+filepath.Join(root, "nope.exe"))
 	if code != 1 || !strings.Contains(errOut, "upstream bd 1.3.1") {
 		t.Fatalf("code=%d err=%q", code, errOut)
+	}
+}
+
+// company-88mo: a call for an embedded-Dolt project reaches upstream only when
+// the guard (the switch freeze) allows it.
+func TestMaybeExecGuardRefusesBeforeUpstream(t *testing.T) {
+	root := mk(t, `{"backend":"dolt"}`)
+	out, errOut, code := fork(t, root, "create x", "PT_GUARD=1")
+	if code != GuardExitCode || strings.Contains(out, "args=") || !strings.Contains(errOut, "guard refused create") {
+		t.Fatalf("code=%d out=%q err=%q", code, out, errOut)
+	}
+	// No guard: unchanged pass-through.
+	if _, _, code := fork(t, root, "create x"); code != 7 {
+		t.Fatalf("unguarded code=%d", code)
 	}
 }

@@ -6,6 +6,7 @@ package sqlitelite
 // failure the staging file is removed and the project is exactly as it was.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -162,13 +163,13 @@ func Migrate(ctx context.Context, o MigrateOptions) (*MigrateReport, error) {
 		if workers < 1 {
 			workers = 4
 		}
-		show, done, err := e.showFunc(o.ForkBin, beadsDir, staging, workers)
+		show, batch, done, err := e.showFunc(o.ForkBin, beadsDir, staging, workers)
 		if err != nil {
 			cleanup()
 			return rep, err
 		}
 		defer done()
-		vo.Show, vo.ShowWorkers = show, workers
+		vo.Show, vo.ShowBatch, vo.ShowWorkers = show, batch, workers
 	}
 	vr, err := Verify(ctx, in, staging, vo)
 	if err != nil {
@@ -192,15 +193,15 @@ func Migrate(ctx context.Context, o MigrateOptions) (*MigrateReport, error) {
 // showFunc builds the pluggable show diff: old side = upstream bd on one of
 // the extractor's copies, new side = the fork on a scratch project holding a
 // copy of the staging database and a metadata.json with backend sqlite.
-func (e *Extractor) showFunc(forkBin, beadsDir, staging string, workers int) (ShowFunc, func(), error) {
+func (e *Extractor) showFunc(forkBin, beadsDir, staging string, workers int) (ShowFunc, ShowBatchFunc, func(), error) {
 	stage := filepath.Join(e.o.WorkDir+"-newside", "p")
 	if err := os.MkdirAll(filepath.Join(stage, ".beads"), 0o755); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	done := func() { _ = os.RemoveAll(e.o.WorkDir + "-newside") }
 	if err := copyFile(staging, filepath.Join(stage, ".beads", "beads.db")); err != nil {
 		done()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	meta := map[string]any{}
 	if b, err := os.ReadFile(filepath.Join(beadsDir, "metadata.json")); err == nil {
@@ -210,7 +211,7 @@ func (e *Extractor) showFunc(forkBin, beadsDir, staging string, workers int) (Sh
 	mb, _ := json.MarshalIndent(meta, "", "  ")
 	if err := os.WriteFile(filepath.Join(stage, ".beads", "metadata.json"), mb, 0o644); err != nil {
 		done()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	// Embedded Dolt serialises per folder, so give each worker its own copy.
 	pool := make(chan string, workers)
@@ -218,13 +219,13 @@ func (e *Extractor) showFunc(forkBin, beadsDir, staging string, workers int) (Sh
 		c := filepath.Join(e.o.WorkDir+"-show", fmt.Sprintf("w%d", i))
 		if err := copyBeads(e.root, c); err != nil {
 			done()
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		pool <- c
 	}
 	prev := done
 	done = func() { prev(); _ = os.RemoveAll(e.o.WorkDir + "-show") }
-	return func(id string) ([]byte, []byte, error) {
+	single := func(id string) ([]byte, []byte, error) {
 		root := <-pool
 		defer func() { pool <- root }()
 		oldOut, err := retryRun(showAttempts, 2*time.Second, func() ([]byte, error) { return runExe(e.o.BdBin, root, "show", id, "--json") })
@@ -236,7 +237,50 @@ func (e *Extractor) showFunc(forkBin, beadsDir, staging string, workers int) (Sh
 			return nil, nil, err
 		}
 		return oldOut, newOut, nil
-	}, done, nil
+	}
+	batch := func(ids []string) (map[string][]byte, map[string][]byte, error) {
+		root := <-pool
+		defer func() { pool <- root }()
+		args := append(append([]string{"show"}, ids...), "--json")
+		oldOut, err := retryRun(showAttempts, 2*time.Second, func() ([]byte, error) { return runExe(e.o.BdBin, root, args...) })
+		if err != nil {
+			return nil, nil, err
+		}
+		newOut, err := retryRun(showAttempts, 2*time.Second, func() ([]byte, error) { return runExe(forkBin, stage, args...) })
+		if err != nil {
+			return nil, nil, err
+		}
+		om, err := splitShow(oldOut)
+		if err != nil {
+			return nil, nil, err
+		}
+		nm, err := splitShow(newOut)
+		if err != nil {
+			return nil, nil, err
+		}
+		return om, nm, nil
+	}
+	return single, batch, done, nil
+}
+
+// splitShow splits the array printed by `show a b c --json` into its elements
+// keyed by their "id".
+func splitShow(out []byte) (map[string][]byte, error) {
+	var arr []json.RawMessage
+	if err := json.Unmarshal(bytes.TrimSpace(out), &arr); err != nil {
+		return nil, fmt.Errorf("show --json output is not an array: %w", err)
+	}
+	m := make(map[string][]byte, len(arr))
+	for _, el := range arr {
+		var h struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(el, &h) != nil || h.ID == "" {
+			return nil, errors.New("show --json element without id")
+		}
+		m[h.ID] = el
+	}
+	return m, nil
 }
 
 func runExe(bin, root string, args ...string) ([]byte, error) {

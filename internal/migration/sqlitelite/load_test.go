@@ -304,3 +304,54 @@ func TestReadsDependencyOrderAndWorkType(t *testing.T) {
 		t.Fatalf("work_type %q, want empty (mutex default is not printed)", is.WorkType)
 	}
 }
+
+// Batched show diff: same per-bead strictness, one call per batch, single-id
+// fallback for anything the batch did not return.
+func TestVerifyShowBatch(t *testing.T) {
+	ctx := context.Background()
+	in := testInput()
+	dest := filepath.Join(t.TempDir(), "beads.db")
+	rep, err := Load(ctx, in, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls, singles := 0, 0
+	mk := func(diffID, missID string) VerifyOptions {
+		calls, singles = 0, 0
+		return VerifyOptions{
+			Loaded: rep, Tables: in.Tables, ShowBatchSize: 1000,
+			ShowBatch: func(ids []string) (map[string][]byte, map[string][]byte, error) {
+				calls++
+				om, nm := map[string][]byte{}, map[string][]byte{}
+				for _, id := range ids {
+					if id == missID {
+						continue
+					}
+					om[id] = []byte(`{"id":"` + id + `","a":1}`)
+					nm[id] = om[id]
+					if id == diffID {
+						nm[id] = []byte(`{"id":"` + id + `","a":2}`)
+					}
+				}
+				return om, nm, nil
+			},
+			Show: func(id string) ([]byte, []byte, error) {
+				singles++
+				return []byte(`{"id":"` + id + `"}`), []byte(`{"id":"` + id + `"}`), nil
+			},
+		}
+	}
+	v, err := Verify(ctx, in, dest, mk("", ""))
+	if err != nil || !v.OK || calls != 1 || singles != 0 || !strings.HasPrefix(v.ShowDiff, "0 differences") {
+		t.Fatalf("clean: err=%v calls=%d singles=%d %+v", err, calls, singles, v)
+	}
+	first := v.Beads[0].ID
+	v, _ = Verify(ctx, in, dest, mk(first, ""))
+	if v.OK || !strings.HasPrefix(v.ShowDiff, "1 differences") {
+		t.Fatalf("a difference inside a batch must fail: %+v", v)
+	}
+	v, _ = Verify(ctx, in, dest, mk("", first))
+	if singles != 1 || !v.OK {
+		t.Fatalf("missing id must fall back to single show: singles=%d %+v", singles, v)
+	}
+}

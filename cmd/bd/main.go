@@ -38,11 +38,11 @@ import (
 	"github.com/steveyegge/beads/internal/routing"
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/storage/backends"
-	"github.com/steveyegge/beads/internal/storage/sqlitestore"
 	"github.com/steveyegge/beads/internal/storage/dolt"
 	dbidentifier "github.com/steveyegge/beads/internal/storage/domain/db"
 	"github.com/steveyegge/beads/internal/storage/embeddeddolt"
 	"github.com/steveyegge/beads/internal/storage/schema"
+	"github.com/steveyegge/beads/internal/storage/sqlitestore"
 	"github.com/steveyegge/beads/internal/storage/uow"
 	"github.com/steveyegge/beads/internal/telemetry"
 	"github.com/steveyegge/beads/internal/ui"
@@ -2396,9 +2396,30 @@ func validateWorkspaceIdentity(ctx context.Context, beadsDir string) error {
 	return nil
 }
 
+// liteFreezeGuard applies the switch notice and freeze to calls that are about
+// to be handed to upstream bd (company-88mo). It classifies the command the
+// way PersistentPreRunE does: a command not in readOnlyCommands, or a preview
+// flag absent, counts as a write and is refused while the project is frozen.
+func liteFreezeGuard(beadsDir string, args []string) error {
+	write := true
+	if c, _, err := rootCmd.Find(args); err == nil && c != nil && c != rootCmd {
+		write = !isReadOnlyCommand(c.Name())
+	}
+	for _, a := range args {
+		if a == "--dry-run" || a == "--inspect" {
+			write = false
+		}
+	}
+	if err := switchstate.Check(beadsDir, write, os.Stderr); err != nil {
+		return err
+	}
+	return nil
+}
+
 func main() {
 	// lite: embedded-Dolt projects run upstream bd 1.3.1 unchanged (W12); sqlite
 	// is a registered backend (W5, T006). Both before anything opens a store.
+	passthrough.Guard = liteFreezeGuard
 	passthrough.MaybeExec()
 	sqlitestore.Register()
 
