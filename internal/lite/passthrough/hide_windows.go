@@ -3,6 +3,7 @@
 package passthrough
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -78,8 +79,11 @@ func waitStoreFree(beadsDir string, budget time.Duration) error {
 
 // lockBusy tries a non-blocking exclusive byte-range lock on the file.
 func lockBusy(path string) (bool, error) {
-	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	f, err := os.Open(path)
 	if err != nil {
+		if errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
+			return true, nil
+		}
 		return false, err
 	}
 	defer f.Close()
