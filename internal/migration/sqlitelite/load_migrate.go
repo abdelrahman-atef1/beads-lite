@@ -227,11 +227,11 @@ func (e *Extractor) showFunc(forkBin, beadsDir, staging string, workers int) (Sh
 	return func(id string) ([]byte, []byte, error) {
 		root := <-pool
 		defer func() { pool <- root }()
-		oldOut, err := runExe(e.o.BdBin, root, "show", id, "--json")
+		oldOut, err := retryRun(showAttempts, 2*time.Second, func() ([]byte, error) { return runExe(e.o.BdBin, root, "show", id, "--json") })
 		if err != nil {
 			return nil, nil, err
 		}
-		newOut, err := runExe(forkBin, stage, "show", id, "--json")
+		newOut, err := retryRun(showAttempts, 2*time.Second, func() ([]byte, error) { return runExe(forkBin, stage, "show", id, "--json") })
 		if err != nil {
 			return nil, nil, err
 		}
@@ -271,4 +271,26 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// showAttempts is how many times one `show` child may be started before its
+// failure counts. A Go runtime crash in the child (exit 2, seen once on fatura
+// under memory pressure, T048) must not fail a whole migration; a real
+// difference or a bead that does not exist fails identically every time.
+const showAttempts = 3
+
+// retryRun calls f up to attempts times, pausing between tries, and returns
+// the first success or the last error.
+func retryRun(attempts int, pause time.Duration, f func() ([]byte, error)) ([]byte, error) {
+	var out []byte
+	var err error
+	for i := 0; i < attempts; i++ {
+		if out, err = f(); err == nil {
+			return out, nil
+		}
+		if i < attempts-1 {
+			time.Sleep(pause * time.Duration(i+1))
+		}
+	}
+	return nil, err
 }

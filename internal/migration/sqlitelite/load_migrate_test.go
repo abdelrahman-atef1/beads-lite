@@ -2,6 +2,7 @@ package sqlitelite
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,5 +59,25 @@ func TestMigratePipelineWithStandInBd(t *testing.T) {
 	opts.WorkDir = filepath.Join(t.TempDir(), "w")
 	if _, err := Migrate(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("second run: %v", err)
+	}
+}
+
+// T048: a child that crashes once (runtime exit 2) is retried, a persistent
+// failure still surfaces after showAttempts tries.
+func TestRetryRun(t *testing.T) {
+	calls := 0
+	out, err := retryRun(3, 0, func() ([]byte, error) {
+		calls++
+		if calls < 3 {
+			return nil, errors.New("exit status 2")
+		}
+		return []byte("ok"), nil
+	})
+	if err != nil || string(out) != "ok" || calls != 3 {
+		t.Fatalf("out=%q err=%v calls=%d", out, err, calls)
+	}
+	calls = 0
+	if _, err := retryRun(3, 0, func() ([]byte, error) { calls++; return nil, errors.New("boom") }); err == nil || calls != 3 {
+		t.Fatalf("err=%v calls=%d", err, calls)
 	}
 }
