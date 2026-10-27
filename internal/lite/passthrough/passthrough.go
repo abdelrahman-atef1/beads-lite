@@ -70,8 +70,8 @@ func MaybeExec() {
 			return
 		}
 	}
-	code, err := Run(UpstreamPath(), args, os.Environ())
-	if errors.Is(err, ErrTimeout) {
+	code, err := RunIn(dir, UpstreamPath(), args, os.Environ())
+	if errors.Is(err, ErrTimeout) || errors.Is(err, ErrStoreBusy) {
 		fmt.Fprintf(os.Stderr, "Error: bd: %v\n", err)
 		ExitFunc(code)
 		return
@@ -201,7 +201,11 @@ func IsEmbeddedDolt(beadsDir string) bool {
 // Run starts upstream with the same args, env and stdio and returns its exit
 // code. upstream must be an absolute path: never resolved by name, so a
 // look-in-the-working-folder-first lookup cannot pick up a planted bd.exe.
-func Run(upstream string, args, env []string) (int, error) {
+func Run(upstream string, args, env []string) (int, error) { return RunIn("", upstream, args, env) }
+
+// RunIn is Run for a known project: beadsDir (may be "") is checked for a
+// Dolt store held by another process before upstream is started.
+func RunIn(beadsDir, upstream string, args, env []string) (int, error) {
 	if !filepath.IsAbs(upstream) {
 		return 0, fmt.Errorf("upstream path %q is not absolute", upstream)
 	}
@@ -215,19 +219,20 @@ func Run(upstream string, args, env []string) (int, error) {
 	// waits on Dolt gate locks and the embedded store with no timeout of its
 	// own, so the fork bounds it and kills it.
 	limit := Timeout(env)
-	ctx := context.Background()
-	if limit > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, limit)
-		defer cancel()
+	if err := waitStoreFree(beadsDir, storeWait); err != nil {
+		return StoreBusyExitCode, err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
 	cmd := exec.CommandContext(ctx, upstream, args...)
 	cmd.Env = append(append([]string{}, env...), EnvActive+"=1")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.WaitDelay = 5 * time.Second
 	hide(cmd)
-	if err := cmd.Run(); err != nil {
+	err := runTree(cmd)
+	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return TimeoutExitCode, fmt.Errorf("%w after %s (upstream pid %d killed; set %s to change, 0 = no limit)", ErrTimeout, limit, cmd.Process.Pid, EnvTimeout)
+			return TimeoutExitCode, fmt.Errorf("%w after %s (upstream pid %d and its children killed; set %s to change)", ErrTimeout, limit, cmd.Process.Pid, EnvTimeout)
 		}
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
@@ -239,28 +244,45 @@ func Run(upstream string, args, env []string) (int, error) {
 }
 
 const (
-	// EnvTimeout bounds one passthrough call (Go duration, e.g. "90s"; "0" = no limit).
+	// EnvTimeout bounds one passthrough call (Go duration, e.g. "90s"; 0 or junk = default, capped at MaxTimeout).
 	EnvTimeout = "BD_LITE_PASSTHROUGH_TIMEOUT"
 	// DefaultTimeout is generous for a Dolt read on a cold, busy machine and far
 	// below "10 minutes".
 	DefaultTimeout = 120 * time.Second
+	// storeWait is how long a call waits for another process to let go of the
+	// Dolt store before it gives up (upstream would wait on it forever).
+	storeWait = 20 * time.Second
+	// StoreBusyExitCode is the exit status of a call refused because the store
+	// is held by another process (EX_TEMPFAIL).
+	StoreBusyExitCode = 75
 	// TimeoutExitCode is the exit status of a call that hit the limit (like timeout(1)).
 	TimeoutExitCode = 124
 )
 
+// ErrStoreBusy marks a call refused because another process holds the Dolt store.
+var ErrStoreBusy = errors.New("dolt store is held by another process")
+
 // ErrTimeout marks a passthrough call killed at its limit.
 var ErrTimeout = errors.New("upstream bd timed out")
 
-// Timeout returns the per-call limit from env (an os.Environ()-style slice), else DefaultTimeout.
+// MaxTimeout is the longest limit a caller may ask for.
+const MaxTimeout = 30 * time.Minute
+
+// Timeout returns the per-call limit from env (an os.Environ()-style slice).
+// There is no "no limit": 0, a negative or an unparsable value means
+// DefaultTimeout, and anything above MaxTimeout is cut to it. A QA script that
+// set =0 once turned the guard off and left calls hanging for an hour.
 func Timeout(env []string) time.Duration {
 	for _, kv := range env {
 		if v, ok := strings.CutPrefix(kv, EnvTimeout+"="); ok && v != "" {
-			if d, err := time.ParseDuration(v); err == nil && d >= 0 {
-				return d
+			d, err := time.ParseDuration(v)
+			switch {
+			case err != nil || d <= 0:
+				return DefaultTimeout
+			case d > MaxTimeout:
+				return MaxTimeout
 			}
-			if v == "0" {
-				return 0
-			}
+			return d
 		}
 	}
 	return DefaultTimeout

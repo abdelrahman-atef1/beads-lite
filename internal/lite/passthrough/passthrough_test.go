@@ -33,7 +33,7 @@ func TestRunTimeout(t *testing.T) {
 }
 
 func TestTimeoutParse(t *testing.T) {
-	for env, want := range map[string]time.Duration{"": DefaultTimeout, "90s": 90 * time.Second, "0": 0, "junk": DefaultTimeout} {
+	for env, want := range map[string]time.Duration{"": DefaultTimeout, "90s": 90 * time.Second, "0": DefaultTimeout, "-5s": DefaultTimeout, "junk": DefaultTimeout, "99h": MaxTimeout} {
 		if got := Timeout([]string{EnvTimeout + "=" + env}); got != want {
 			t.Errorf("%q: got %s want %s", env, got, want)
 		}
@@ -45,6 +45,15 @@ func TestTimeoutParse(t *testing.T) {
 func TestMain(m *testing.M) {
 	switch {
 	case os.Getenv(EnvActive) != "":
+		if pf := os.Getenv("PT_PIDFILE"); pf != "" { // stand-in that leaves a grandchild behind
+			me, _ := os.Executable()
+			c := exec.Command(me)
+			c.Env = append(os.Environ(), "PT_HANG=1", "PT_PIDFILE=")
+			if err := c.Start(); err == nil {
+				_ = os.WriteFile(pf, []byte(fmt.Sprint(c.Process.Pid)), 0o644)
+			}
+			time.Sleep(time.Minute)
+		}
 		if os.Getenv("PT_HANG") != "" {
 			time.Sleep(time.Minute) // stand-in for upstream stuck on a lock
 		}
