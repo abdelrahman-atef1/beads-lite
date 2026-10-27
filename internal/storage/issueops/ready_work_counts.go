@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/steveyegge/beads/internal/storage/depid"
 	"github.com/steveyegge/beads/internal/storage/sqlbuild"
 	"github.com/steveyegge/beads/internal/types"
 )
@@ -359,6 +360,9 @@ func ScanReadyWorkRowWithCounts(rows *sql.Rows, hyd sqlbuild.CountsHydration) (*
 		if err := json.Unmarshal([]byte(depsJSON.String), &deps); err != nil {
 			return nil, fmt.Errorf("scan issue with counts: parse deps_json: %w", err)
 		}
+		// lite (T046): json_group_array order is the scan order; upstream lists
+		// edges in primary-key (depid) order.
+		sortDepsByPK(deps)
 		issue.Dependencies = deps
 	}
 
@@ -385,4 +389,17 @@ func (c *compositeReadyRow) Scan(dest ...any) error {
 	combined = append(combined, dest...)
 	combined = append(combined, c.extra...)
 	return c.row.Scan(combined...)
+}
+
+// sortDepsByPK orders edges by their dependencies.id (depid.New of the edge's
+// natural key), the order a SELECT ... ORDER BY id returns.
+func sortDepsByPK(deps []*types.Dependency) {
+	if len(deps) < 2 {
+		return
+	}
+	keys := make(map[*types.Dependency]string, len(deps))
+	for _, d := range deps {
+		keys[d] = depid.New(d.IssueID, d.DependsOnID)
+	}
+	sort.SliceStable(deps, func(i, j int) bool { return keys[deps[i]] < keys[deps[j]] })
 }

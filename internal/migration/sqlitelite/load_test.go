@@ -11,6 +11,7 @@ import (
 
 	"github.com/steveyegge/beads/internal/storage/depid"
 	"github.com/steveyegge/beads/internal/storage/sqlitestore"
+	"github.com/steveyegge/beads/internal/types"
 )
 
 const tIssue1 = `{"_type":"issue","id":"p-1","title":"T \u0639\u0631\u0628\u064a","description":"line1\nline2  \r\n","design":"d","status":"open","priority":1,"issue_type":"task","assignee":"swe","created_at":"2026-10-25T07:51:45Z","created_by":"cos","updated_at":"2026-10-25T08:00:00Z","labels":["a","b"],"metadata":{"card_q":"why?","title_ar":"x","asked_at":"2026-10-22T00:00:00Z"},"dependencies":[{"issue_id":"p-1","depends_on_id":"p-2","type":"blocks","created_at":"2026-10-25T07:51:45Z","created_by":"cos","metadata":"{}"}],"comments":[{"id":"c1","issue_id":"p-1","author":"cos","text":"hello","created_at":"2026-10-25T07:52:00Z"}],"lease_expires_at":"2026-10-25T09:00:00Z","heartbeat_at":"2026-10-25T08:30:00Z","dependency_count":1,"dependent_count":0,"comment_count":1}`
@@ -210,5 +211,96 @@ func TestDependencyOrderMatchesDoltPrimaryKeyOrder(t *testing.T) {
 	}
 	if want[0] == targets[0] && want[1] == targets[1] && want[2] == targets[2] {
 		t.Fatal("test data does not exercise ordering; pick other targets")
+	}
+}
+
+// T045: is_blocked is derived and not loaded from the export; the loader must
+// rebuild it, or blocked returns [] and ready lists blocked beads.
+func TestLoadRebuildsIsBlocked(t *testing.T) {
+	ctx := context.Background()
+	dest := filepath.Join(t.TempDir(), "beads.db")
+	if _, err := Load(ctx, testInput(), dest); err != nil {
+		t.Fatal(err)
+	}
+	st, err := sqlitestore.Open(ctx, dest, sqlitestore.Options{Actor: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	var blocked int
+	if err := st.DB().QueryRowContext(ctx, "SELECT is_blocked FROM issues WHERE id='p-1'").Scan(&blocked); err != nil {
+		t.Fatal(err)
+	}
+	if blocked != 1 {
+		t.Fatalf("p-1 depends on open p-2 via blocks: is_blocked=%d, want 1", blocked)
+	}
+	var other int
+	if err := st.DB().QueryRowContext(ctx, "SELECT is_blocked FROM issues WHERE id='p-2'").Scan(&other); err != nil || other != 0 {
+		t.Fatalf("p-2 is_blocked=%d err=%v, want 0", other, err)
+	}
+}
+
+// T046 + T049: list lists dependencies in primary-key (depid) order like
+// upstream Dolt (export stays sorted by target); the default work_type 'mutex' is not
+// reported (upstream omits it).
+func TestReadsDependencyOrderAndWorkType(t *testing.T) {
+	ctx := context.Background()
+	targets := []string{"q-a", "q-b", "q-c", "q-d", "q-e"}
+	var lines []string
+	var deps []string
+	for _, tg := range targets {
+		lines = append(lines, `{"_type":"issue","id":"`+tg+`","title":"t","status":"open","priority":2,"issue_type":"task","created_at":"2026-10-25T07:51:45Z","updated_at":"2026-10-25T07:51:45Z"}`)
+		deps = append(deps, `{"issue_id":"q-src","depends_on_id":"`+tg+`","type":"blocks","created_at":"2026-10-25T07:51:45Z","created_by":"x","metadata":"{}"}`)
+	}
+	lines = append(lines, `{"_type":"issue","id":"q-src","title":"s","status":"open","priority":2,"issue_type":"task","created_at":"2026-10-25T07:51:45Z","updated_at":"2026-10-25T07:51:45Z","dependencies":[`+strings.Join(deps, ",")+`]}`)
+	in := &Input{IssuesJSONL: []byte(strings.Join(lines, "\n") + "\n"), Config: map[string]any{"issue_prefix": "q"}}
+	dest := filepath.Join(t.TempDir(), "beads.db")
+	if _, err := Load(ctx, in, dest); err != nil {
+		t.Fatal(err)
+	}
+	st, err := sqlitestore.Open(ctx, dest, sqlitestore.Options{Actor: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	want := append([]string(nil), targets...)
+	sort.Slice(want, func(i, j int) bool { return depid.New("q-src", want[i]) < depid.New("q-src", want[j]) })
+	check := func(name string, got, want []string) {
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("%s order %v, want %v", name, got, want)
+		}
+	}
+	// export / dep reads: sorted by target (upstream export order).
+	sorted := append([]string(nil), targets...)
+	sort.Strings(sorted)
+	all, err := st.GetAllDependencyRecords(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var g1 []string
+	for _, d := range all["q-src"] {
+		g1 = append(g1, d.DependsOnID)
+	}
+	check("export", g1, sorted)
+	// list: primary-key (depid) order.
+	page, err := st.SearchIssuesWithCounts(ctx, "", types.IssueFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var g2 []string
+	for _, it := range page {
+		if it.Issue.ID == "q-src" {
+			for _, d := range it.Issue.Dependencies {
+				g2 = append(g2, d.DependsOnID)
+			}
+		}
+	}
+	check("list", g2, want)
+	is, err := st.GetIssue(ctx, "q-src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if is.WorkType != "" {
+		t.Fatalf("work_type %q, want empty (mutex default is not printed)", is.WorkType)
 	}
 }
