@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/beads/internal/storage/depid"
+	"github.com/steveyegge/beads/internal/storage/issueops"
 	"github.com/steveyegge/beads/internal/storage/kvkeys"
 	"github.com/steveyegge/beads/internal/storage/sqlitestore"
 	"github.com/steveyegge/beads/internal/types"
@@ -197,7 +198,12 @@ func load(ctx context.Context, in *Input, dest string) (*LoadReport, error) {
 				return err
 			}
 		}
-		return loadTables(ctx, tx, in.Tables, schema, rep)
+		if err := loadTables(ctx, tx, in.Tables, schema, rep); err != nil {
+			return err
+		}
+		// lite: is_blocked is derived (skipped above); rebuild it so blocked/ready match upstream.
+		_, err := issueops.RecomputeAllIsBlockedInTx(ctx, tx)
+		return err
 	})
 	if err != nil {
 		return nil, err
