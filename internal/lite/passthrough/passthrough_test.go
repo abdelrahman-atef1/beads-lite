@@ -1,19 +1,53 @@
 package passthrough
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+// A stuck upstream is killed at the limit and reported, not waited on.
+func TestRunTimeout(t *testing.T) {
+	me, _ := os.Executable()
+	data, err := os.ReadFile(me)
+	if err != nil {
+		t.Fatal(err)
+	}
+	self := filepath.Join(t.TempDir(), "standin.exe") // a copy: Run refuses to start itself
+	if err := os.WriteFile(self, data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	code, err := Run(self, nil, []string{"PT_HANG=1", EnvTimeout + "=500ms"})
+	if !errors.Is(err, ErrTimeout) || code != TimeoutExitCode {
+		t.Fatalf("code=%d err=%v, want timeout", code, err)
+	}
+	if d := time.Since(start); d > 10*time.Second {
+		t.Fatalf("took %s", d)
+	}
+}
+
+func TestTimeoutParse(t *testing.T) {
+	for env, want := range map[string]time.Duration{"": DefaultTimeout, "90s": 90 * time.Second, "0": 0, "junk": DefaultTimeout} {
+		if got := Timeout([]string{EnvTimeout + "=" + env}); got != want {
+			t.Errorf("%q: got %s want %s", env, got, want)
+		}
+	}
+}
 
 // The test binary doubles as both the fork (PT_MODE=fork) and the stand-in
 // upstream bd (started with EnvActive set by Run).
 func TestMain(m *testing.M) {
 	switch {
 	case os.Getenv(EnvActive) != "":
+		if os.Getenv("PT_HANG") != "" {
+			time.Sleep(time.Minute) // stand-in for upstream stuck on a lock
+		}
 		fmt.Printf("args=%s active=%s keep=%s\n", strings.Join(os.Args[1:], "|"), os.Getenv(EnvActive), os.Getenv("PT_KEEP"))
 		fmt.Fprint(os.Stderr, "err-out")
 		os.Exit(7)

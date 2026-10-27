@@ -9,6 +9,7 @@
 package passthrough
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -69,6 +71,11 @@ func MaybeExec() {
 		}
 	}
 	code, err := Run(UpstreamPath(), args, os.Environ())
+	if errors.Is(err, ErrTimeout) {
+		fmt.Fprintf(os.Stderr, "Error: bd: %v\n", err)
+		ExitFunc(code)
+		return
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bd: this project is still on the Dolt store and needs upstream bd 1.3.1: %v\n(set %s to its absolute path)\n", err, EnvUpstream)
 		ExitFunc(1)
@@ -204,11 +211,24 @@ func Run(upstream string, args, env []string) (int, error) {
 	if self, err := os.Executable(); err == nil && sameFile(self, upstream) {
 		return 0, errors.New("upstream path points at this binary")
 	}
-	cmd := exec.Command(upstream, args...)
+	// A call must fail fast, never hang (company-1bo5 P0, 2026-10-27): upstream
+	// waits on Dolt gate locks and the embedded store with no timeout of its
+	// own, so the fork bounds it and kills it.
+	limit := Timeout(env)
+	ctx := context.Background()
+	if limit > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, limit)
+		defer cancel()
+	}
+	cmd := exec.CommandContext(ctx, upstream, args...)
 	cmd.Env = append(append([]string{}, env...), EnvActive+"=1")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	hide(cmd)
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return TimeoutExitCode, fmt.Errorf("%w after %s (upstream pid %d killed; set %s to change, 0 = no limit)", ErrTimeout, limit, cmd.Process.Pid, EnvTimeout)
+		}
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
 			return ee.ExitCode(), nil
@@ -216,6 +236,34 @@ func Run(upstream string, args, env []string) (int, error) {
 		return 0, err
 	}
 	return 0, nil
+}
+
+const (
+	// EnvTimeout bounds one passthrough call (Go duration, e.g. "90s"; "0" = no limit).
+	EnvTimeout = "BD_LITE_PASSTHROUGH_TIMEOUT"
+	// DefaultTimeout is generous for a Dolt read on a cold, busy machine and far
+	// below "10 minutes".
+	DefaultTimeout = 120 * time.Second
+	// TimeoutExitCode is the exit status of a call that hit the limit (like timeout(1)).
+	TimeoutExitCode = 124
+)
+
+// ErrTimeout marks a passthrough call killed at its limit.
+var ErrTimeout = errors.New("upstream bd timed out")
+
+// Timeout returns the per-call limit from env (an os.Environ()-style slice), else DefaultTimeout.
+func Timeout(env []string) time.Duration {
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, EnvTimeout+"="); ok && v != "" {
+			if d, err := time.ParseDuration(v); err == nil && d >= 0 {
+				return d
+			}
+			if v == "0" {
+				return 0
+			}
+		}
+	}
+	return DefaultTimeout
 }
 
 func sameFile(a, b string) bool {
