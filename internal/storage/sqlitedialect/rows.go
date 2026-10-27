@@ -11,10 +11,28 @@ import (
 // declared column type, so database/sql cannot scan it into a time.Time or
 // sql.NullTime the way Dolt's driver allows. wrapStmt decodes such values:
 // only columns with an empty declared type (expressions) whose text is exactly
-// "YYYY-MM-DD HH:MM:SS" (the store's write format, UTC) become time.Time.
+// a known datetime text form (see sqliteDatetimeLayouts) become time.Time.
 // Plain columns are untouched, so a datetime column scanned into a string
 // still reads back as stored.
 const sqliteDatetime = "2006-01-02 15:04:05"
+
+// sqliteDatetimeLayouts are the text forms a datetime column holds in a real
+// store: the native write format, plus RFC 3339 (with or without fractional
+// seconds) left by migrated/imported rows. A live store mixes them, so
+// MAX(created_at) can come back in either (company-1bo5 P0: "...T05:42:51Z").
+var sqliteDatetimeLayouts = []string{sqliteDatetime, time.RFC3339Nano, "2006-01-02 15:04:05.999999999", "2006-01-02T15:04:05.999999999"}
+
+func parseSQLiteDatetime(s string) (time.Time, bool) {
+	if len(s) < len(sqliteDatetime) {
+		return time.Time{}, false
+	}
+	for _, l := range sqliteDatetimeLayouts {
+		if t, err := time.Parse(l, s); err == nil {
+			return t.UTC(), true
+		}
+	}
+	return time.Time{}, false
+}
 
 func wrapStmt(st driver.Stmt) driver.Stmt { return &stmt{base: st} }
 
@@ -97,8 +115,8 @@ func (r *rows) Next(dest []driver.Value) error {
 		if i >= len(r.timeCols) || !r.timeCols[i] {
 			continue
 		}
-		if s, ok := v.(string); ok && len(s) == len(sqliteDatetime) {
-			if t, err := time.Parse(sqliteDatetime, s); err == nil {
+		if s, ok := v.(string); ok {
+			if t, ok := parseSQLiteDatetime(s); ok {
 				dest[i] = t
 			}
 		}
