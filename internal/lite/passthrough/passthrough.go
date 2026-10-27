@@ -128,8 +128,42 @@ func FindBeadsDir(start, envDir string) (string, bool) {
 			dir = filepath.Clean(t)
 		}
 	}
+	if envDir == "" {
+		dir = mainTreeBeadsDir(dir)
+	}
 	st, err := os.Stat(dir)
 	return dir, err == nil && st.IsDir()
+}
+
+// mainTreeBeadsDir maps a .beads folder inside a linked git worktree to the
+// main tree's .beads folder, which is the one bd actually opens (company-y7ft).
+// A worktree on an old branch carries its own tracked metadata.json that may
+// still say dolt. On any doubt it returns dir unchanged.
+func mainTreeBeadsDir(dir string) string {
+	root := filepath.Dir(dir)
+	b, err := os.ReadFile(filepath.Join(root, ".git")) // a file only in linked worktrees
+	if err != nil {
+		return dir
+	}
+	g := strings.TrimSpace(string(b))
+	if !strings.HasPrefix(g, "gitdir:") {
+		return dir
+	}
+	gd := filepath.FromSlash(strings.TrimSpace(strings.TrimPrefix(g, "gitdir:")))
+	if !filepath.IsAbs(gd) {
+		gd = filepath.Join(root, gd)
+	}
+	// <main>/.git/worktrees/<name>
+	gd = filepath.Clean(gd)
+	common := filepath.Dir(filepath.Dir(gd))
+	if filepath.Base(filepath.Dir(gd)) != "worktrees" || filepath.Base(common) != ".git" {
+		return dir
+	}
+	cand := filepath.Join(filepath.Dir(common), ".beads")
+	if st, err := os.Stat(cand); err == nil && st.IsDir() {
+		return cand
+	}
+	return dir
 }
 
 // IsEmbeddedDolt is true when metadata.json says backend dolt (or unset), the

@@ -182,3 +182,29 @@ func TestMaybeExecGuardRefusesBeforeUpstream(t *testing.T) {
 		t.Fatalf("unguarded code=%d", code)
 	}
 }
+
+// A linked worktree's tracked metadata.json (dolt) must not win over the main
+// tree's sqlite store (company-y7ft).
+func TestFindBeadsDirUsesMainTreeFromWorktree(t *testing.T) {
+	root := t.TempDir()
+	main := filepath.Join(root, "main")
+	wt := filepath.Join(root, "wt")
+	for _, d := range []string{filepath.Join(main, ".beads"), filepath.Join(main, ".git", "worktrees", "wt"), filepath.Join(wt, ".beads")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	os.WriteFile(filepath.Join(main, ".beads", "metadata.json"), []byte(`{"backend":"sqlite"}`), 0o644)
+	os.WriteFile(filepath.Join(wt, ".beads", "metadata.json"), []byte(`{"backend":"dolt"}`), 0o644)
+	os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+filepath.ToSlash(filepath.Join(main, ".git", "worktrees", "wt"))+"\n"), 0o644)
+	dir, ok := FindBeadsDir(wt, "")
+	if !ok || dir != filepath.Join(main, ".beads") {
+		t.Fatalf("got %q ok=%v", dir, ok)
+	}
+	if IsEmbeddedDolt(dir) {
+		t.Fatal("main tree is sqlite")
+	}
+	if d, _ := FindBeadsDir(wt, filepath.Join(wt, ".beads")); d != filepath.Join(wt, ".beads") {
+		t.Fatalf("BEADS_DIR must win: %q", d)
+	}
+}
