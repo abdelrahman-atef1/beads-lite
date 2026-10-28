@@ -32,7 +32,11 @@ func guardLegacyUpgradeWorkspace(beadsDir string) error {
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
-	if isHistoricalSQLiteWorkspace(beadsDir, cfg) {
+	historical, err := isHistoricalSQLiteWorkspace(beadsDir, cfg)
+	if err != nil {
+		return err
+	}
+	if historical {
 		return legacyUpgradeRefusal("historical SQLite workspace")
 	}
 	// Validate read-only discovery metadata before any caller can use Load,
@@ -145,17 +149,20 @@ func workspaceSelectsServerMode(cfg *configfile.Config) bool {
 	return normalizeLoadedConfig(cfg).IsDoltServerMode()
 }
 
-func isHistoricalSQLiteWorkspace(beadsDir string, cfg *configfile.Config) bool {
+// The error is non-nil only when the workspace could not be read (a parallel
+// writer holds the SQLite file); it is never a legacy refusal, so callers can
+// retry (company-1bo5.9).
+func isHistoricalSQLiteWorkspace(beadsDir string, cfg *configfile.Config) (bool, error) {
 	if beadsDir == "" {
-		return false
+		return false, nil
 	}
 	if embeddeddolt.HasRepository(beadsDir) {
-		return false
+		return false, nil
 	}
 	if cfg != nil {
 		return configuredHistoricalSQLiteWorkspace(beadsDir, cfg)
 	}
-	return discoveredHistoricalSQLiteWorkspace(beadsDir)
+	return discoveredHistoricalSQLiteWorkspace(beadsDir), nil
 }
 
 // configuredHistoricalSQLiteWorkspace classifies a metadata-backed workspace
@@ -163,12 +170,12 @@ func isHistoricalSQLiteWorkspace(beadsDir string, cfg *configfile.Config) bool {
 // name from the config exactly as legacy bd did and confirms the file exists
 // beneath beadsDir; a non-SQLite backend, any Dolt configuration, or a database
 // path that is not a plain basename all disqualify it.
-func configuredHistoricalSQLiteWorkspace(beadsDir string, cfg *configfile.Config) bool {
+func configuredHistoricalSQLiteWorkspace(beadsDir string, cfg *configfile.Config) (bool, error) {
 	if cfg.Backend != "" && cfg.Backend != configfile.BackendSQLite {
-		return false
+		return false, nil
 	}
 	if cfg.DoltMode != "" || cfg.DoltDatabase != "" {
-		return false
+		return false, nil
 	}
 	databaseName := cfg.SQLitePath
 	if databaseName == "" {
@@ -178,14 +185,23 @@ func configuredHistoricalSQLiteWorkspace(beadsDir string, cfg *configfile.Config
 		databaseName = "beads.db"
 	}
 	if filepath.Base(databaseName) != databaseName {
-		return false
+		return false, nil
 	}
 	dbPath := filepath.Join(beadsDir, databaseName)
 	if !isNonEmptyRegularFile(dbPath) {
-		return false
+		return false, nil
 	}
-	// lite: a store this build created (and registered) is the supported engine, not a historical workspace.
-	return !(backends.Registered(configfile.BackendSQLite) && sqlitestore.IsLiteStore(dbPath))
+	if !backends.Registered(configfile.BackendSQLite) {
+		return true, nil
+	}
+	// lite: a store this build created (and registered) is the supported engine,
+	// not a historical workspace. A file that cannot be read right now (a
+	// parallel writer) is an error to retry, never proof of a historical store.
+	lite, err := sqlitestore.ProbeLiteStore(dbPath)
+	if err != nil {
+		return false, fmt.Errorf("sqlite workspace busy, retry: %w", err)
+	}
+	return !lite, nil
 }
 
 // discoveredHistoricalSQLiteWorkspace classifies a metadata-less workspace by
