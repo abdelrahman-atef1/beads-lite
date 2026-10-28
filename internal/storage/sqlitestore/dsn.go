@@ -9,10 +9,13 @@ import (
 // dsn builds the modernc.org/sqlite DSN for a database file (research R3).
 // modernc applies every _pragma on each new connection.
 //
+//   - busy_timeout(30000): listed FIRST so it is active for every later pragma
+//     too. A waiting process sleeps inside SQLite instead of failing with
+//     SQLITE_BUSY; a write is milliseconds, but 30 parallel writers queue on one
+//     lock and the tail waited more than the old 5 s (~3% failed, company-1bo5.10).
+//     Degrade slower, never error.
 //   - foreign_keys(1): FK enforcement is off by default in SQLite.
 //   - journal_mode(WAL): readers never wait for the writer.
-//   - busy_timeout(5000): a second process waits up to 5 s inside SQLite instead
-//     of failing with SQLITE_BUSY; a write is milliseconds.
 //   - case_sensitive_like(1): LIKE parity with Dolt's binary collation.
 //   - _txlock=immediate: writers take the lock up front (no upgrade deadlock).
 //   - _timezone=UTC: bound time.Time values are converted to UTC before they are
@@ -27,7 +30,7 @@ func dsn(path string) string {
 	p := filepath.ToSlash(path)
 	// Escape '?' and '#' so a path cannot smuggle DSN options.
 	p = (&url.URL{Path: p}).EscapedPath()
-	return "file:" + p + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)" +
-		"&_pragma=busy_timeout(5000)&_pragma=case_sensitive_like(1)" +
+	return "file:" + p + "?_pragma=busy_timeout(30000)&_pragma=foreign_keys(1)" +
+		"&_pragma=journal_mode(WAL)&_pragma=case_sensitive_like(1)" +
 		"&_txlock=immediate&_time_format=datetime&_timezone=UTC"
 }
