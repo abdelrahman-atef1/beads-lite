@@ -70,6 +70,10 @@ func movedBeadsCheck(path string, args []string) string {
 	var m map[string]movedBead
 	var short map[string]string
 	for _, a := range args {
+		// Free text (a comment, title, note) has whitespace; an id slot never does.
+		if strings.ContainsAny(strings.TrimSpace(a), " \t\r\n") {
+			continue
+		}
 		for _, tok := range strings.FieldsFunc(a, func(r rune) bool { return r == ',' || r == ':' }) {
 			tok = strings.TrimSpace(tok)
 			if tok == "" || strings.ContainsAny(tok, " \t\n") {
@@ -102,12 +106,24 @@ func movedBeadsCheck(path string, args []string) string {
 	return ""
 }
 
+// freeTextFlags hold prose, never ids: a moved id inside them is just a mention.
+var freeTextFlags = map[string]bool{
+	"title": true, "description": true, "notes": true, "append-notes": true,
+	"design": true, "acceptance": true, "message": true, "reason": true,
+	"comment": true, "text": true, "body": true, "context": true, "spec": true,
+	"close-reason": true, "resolution": true, "label": true, "labels": true,
+	"external-ref": true, "assignee": true, "owner": true, "metadata": true,
+}
+
 // enforceNotMoved checks every positional arg and every flag value the user
 // set (--parent, --deps, --of, --with, --id, ...), for every command: one
 // central place, so no write path can land on a moved id.
 func enforceNotMoved(cmd *cobra.Command, args []string) {
 	toks := append([]string{}, args...)
 	cmd.Flags().Visit(func(f *pflag.Flag) {
+		if freeTextFlags[f.Name] {
+			return
+		}
 		if sv, ok := f.Value.(pflag.SliceValue); ok {
 			toks = append(toks, sv.GetSlice()...)
 		} else if f.Value.Type() == "string" {
