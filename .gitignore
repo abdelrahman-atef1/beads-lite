@@ -261,3 +261,5 @@ tmp/docs/CLI_REFERENCE.md
 /bazel-*
 /.bazelrc.local
 /user.bazelrc
+# Agent worktrees, scratch, logs (company-iwmg.8)
+/.work/
