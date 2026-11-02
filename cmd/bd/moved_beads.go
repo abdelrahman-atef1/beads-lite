@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // Moved beads (company-8ce8.14.4). When a project's beads are split out of
@@ -60,43 +63,58 @@ func loadMovedBeads(path string) map[string]movedBead {
 	return out
 }
 
-// movedBeadsCheck returns an error message for the first arg that is a moved
-// id, or "". Cheap pre-filter: only args shaped like an id are looked up.
+// movedBeadsCheck returns an error message for the first token that is a
+// moved id, or "". Tokens may be "blocks:<id>" or "a,b" (flag values), and a
+// prefix-less id ("j1fq.12.60.7") matches its "<prefix>-j1fq.12.60.7" row.
 func movedBeadsCheck(path string, args []string) string {
 	var m map[string]movedBead
+	var short map[string]string
 	for _, a := range args {
-		a = strings.TrimSpace(a)
-		if a == "" || strings.ContainsAny(a, " \t\n") || !strings.Contains(a, "-") {
-			continue
-		}
-		if m == nil {
-			m = loadMovedBeads(path)
-			if len(m) == 0 {
-				return ""
+		for _, tok := range strings.FieldsFunc(a, func(r rune) bool { return r == ',' || r == ':' }) {
+			tok = strings.TrimSpace(tok)
+			if tok == "" || strings.ContainsAny(tok, " \t\n") {
+				continue
 			}
-		}
-		if mv, ok := m[strings.ToLower(a)]; ok {
-			return fmt.Sprintf("Issue %s moved to %s in %s (run bd there; nothing was changed)", a, mv.NewID, mv.Repo)
+			if m == nil {
+				m = loadMovedBeads(path)
+				if len(m) == 0 {
+					return ""
+				}
+				short = map[string]string{}
+				for k := range m {
+					if i := strings.Index(k, "-"); i >= 0 {
+						short[k[i+1:]] = k
+					}
+				}
+			}
+			key := strings.ToLower(tok)
+			if _, ok := m[key]; !ok {
+				if full, ok2 := short[key]; ok2 {
+					key = full
+				} else {
+					continue
+				}
+			}
+			mv := m[key]
+			return fmt.Sprintf("Issue %s moved to %s in %s (run bd there; nothing was changed)", tok, mv.NewID, mv.Repo)
 		}
 	}
 	return ""
 }
 
-// idCommands are the commands whose positional args are bead ids (or, for
-// "comments", "label", "dep": a sub-verb followed by ids).
-var idCommands = map[string]bool{
-	"show": true, "update": true, "close": true, "reopen": true, "comments": true,
-	"comment": true, "label": true, "dep": true, "delete": true, "defer": true,
-	"undefer": true, "edit": true, "children": true, "history": true,
-	"claim": true, "assign": true, "priority": true, "status": true, "tag": true,
-	"rename": true, "move": true, "refs": true, "set-state": true,
-}
-
-func enforceNotMoved(cmdName string, args []string, idFlag []string) {
-	if !idCommands[cmdName] {
-		return
-	}
-	if msg := movedBeadsCheck(movedBeadsPath(), append(append([]string{}, args...), idFlag...)); msg != "" {
+// enforceNotMoved checks every positional arg and every flag value the user
+// set (--parent, --deps, --of, --with, --id, ...), for every command: one
+// central place, so no write path can land on a moved id.
+func enforceNotMoved(cmd *cobra.Command, args []string) {
+	toks := append([]string{}, args...)
+	cmd.Flags().Visit(func(f *pflag.Flag) {
+		if sv, ok := f.Value.(pflag.SliceValue); ok {
+			toks = append(toks, sv.GetSlice()...)
+		} else if f.Value.Type() == "string" {
+			toks = append(toks, f.Value.String())
+		}
+	})
+	if msg := movedBeadsCheck(movedBeadsPath(), toks); msg != "" {
 		fmt.Fprintln(os.Stderr, msg)
 		os.Exit(1)
 	}

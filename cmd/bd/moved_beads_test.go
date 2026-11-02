@@ -29,3 +29,15 @@ func TestMovedBeadsCheck_HitMissAndNoFile(t *testing.T) {
 		t.Fatalf("missing manifest must be a no-op, got %q", got)
 	}
 }
+
+func TestMovedBeadsCheck_FlagValuesAndPrefixless(t *testing.T) {
+	p := writeManifest(t)
+	for _, a := range []string{"blocks:company-5c7.282", "x,company-5c7.282", "5c7.282"} {
+		if got := movedBeadsCheck(p, []string{a}); !strings.Contains(got, "filmmaker-5c7.282") {
+			t.Fatalf("%q not caught: %q", a, got)
+		}
+	}
+	if got := movedBeadsCheck(p, []string{"blocks:company-other", "5c7"}); got != "" {
+		t.Fatalf("false positive: %q", got)
+	}
+}

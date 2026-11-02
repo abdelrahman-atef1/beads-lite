@@ -1004,14 +1004,7 @@ var rootCmd = &cobra.Command{
 		applyNoColorFlag()
 
 		// Moved ids fail loudly before any store opens (company-8ce8.14.4).
-		var idFlags []string
-		if f := cmd.Flags().Lookup("id"); f != nil {
-			idFlags = []string{f.Value.String()}
-		}
-		// Walk up so "comments add <id>" is caught via its parent "comments".
-		for c := cmd; c != nil; c = c.Parent() {
-			enforceNotMoved(c.Name(), args, idFlags)
-		}
+		enforceNotMoved(cmd, args)
 
 		// Initialize CommandContext to hold runtime state (replaces scattered globals)
 		initCommandContext()
