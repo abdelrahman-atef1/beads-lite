@@ -1008,7 +1008,10 @@ var rootCmd = &cobra.Command{
 		if f := cmd.Flags().Lookup("id"); f != nil {
 			idFlags = []string{f.Value.String()}
 		}
-		enforceNotMoved(cmd.Name(), args, idFlags)
+		// Walk up so "comments add <id>" is caught via its parent "comments".
+		for c := cmd; c != nil; c = c.Parent() {
+			enforceNotMoved(c.Name(), args, idFlags)
+		}
 
 		// Initialize CommandContext to hold runtime state (replaces scattered globals)
 		initCommandContext()
