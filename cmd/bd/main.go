@@ -1003,6 +1003,13 @@ var rootCmd = &cobra.Command{
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) (retErr error) {
 		applyNoColorFlag()
 
+		// Moved ids fail loudly before any store opens (company-8ce8.14.4).
+		var idFlags []string
+		if f := cmd.Flags().Lookup("id"); f != nil {
+			idFlags = []string{f.Value.String()}
+		}
+		enforceNotMoved(cmd.Name(), args, idFlags)
+
 		// Initialize CommandContext to hold runtime state (replaces scattered globals)
 		initCommandContext()
 
