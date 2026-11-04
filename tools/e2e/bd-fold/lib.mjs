@@ -13,7 +13,8 @@ export function run(bin, args, { cwd = FIX, actor = "qa", input, timeout = 60000
   const r = spawnSync(bin, args, { cwd, input, windowsHide: true, timeout, maxBuffer: 256e6,
     env: { ...process.env, BD_ACTOR: actor, NO_COLOR: "1" } });
   const buf = r.stdout || Buffer.alloc(0);
-  return { out: buf.toString("utf8"), buf, err: (r.stderr || Buffer.alloc(0)).toString("utf8"), rc: r.status, ms: Date.now() - t0 };
+  const tip = (x) => x.replace(/\n*💡 Tip:[^\n]*\n?/g, "\n"); // bd prints a random tip line: noise
+  return { out: tip(buf.toString("utf8")), buf, err: (r.stderr || Buffer.alloc(0)).toString("utf8"), rc: r.status, ms: Date.now() - t0 };
 }
 export const nw = (args, o) => run(NEW, args, o);
 export const ol = (args, o) => run(OLD, args, o);

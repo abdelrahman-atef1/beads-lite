@@ -8,7 +8,7 @@ import path from "node:path";
 
 const NEW = process.env.BD_NEW, OLD = process.env.BD_OLD || "bd", ENV = process.env.QA_ENV, OUT = process.argv[2];
 const SEED = "qa-1bo5.6.46.5";
-const run = (bin, args, cwd) => spawnSync(bin, args, { cwd, encoding: "utf8", windowsHide: true, maxBuffer: 256e6, env: { ...process.env, BD_ACTOR: "qa", NO_COLOR: "1" } }).stdout || "";
+const run = (bin, args, cwd) => (spawnSync(bin, args, { cwd, encoding: "utf8", windowsHide: true, maxBuffer: 256e6, env: { ...process.env, BD_ACTOR: "qa", NO_COLOR: "1" } }).stdout || "").replace(/\n*💡 Tip:[^\n]*\n?/g, "\n");
 const norm = (s) => s.split(/\s+/).filter(Boolean).join(" ");
 const projects = ["beads-lite", "learner", "workout-tracker", "filmmaker", "patient-record", "abduu-tasks", "brother-exams"];
 const swePicked = new Set(); // SWE's picks are "most comment text"; we exclude the top-20 by comment weight in beads-lite to be independent
