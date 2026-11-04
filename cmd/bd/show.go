@@ -191,7 +191,7 @@ var showCmd = &cobra.Command{
 			// lite: compact text (<= 8 KB per bead); --full or --long = upstream text.
 			if liteCompactText(longMode) {
 				cmts, _ := issueStore.GetIssueComments(ctx, issue.ID)
-				fmt.Print(compact.Show(issue, cmts))
+				fmt.Print(compact.Show(issue, cmts, compact.Options{Sections: liteSections}))
 				result.Close()
 				continue
 			}

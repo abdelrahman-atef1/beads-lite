@@ -15,12 +15,14 @@ import (
 // --fields is unchanged.
 
 var (
-	liteFull   bool
-	liteFields string
+	liteFull     bool
+	liteFields   string
+	liteSections []string
 )
 
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&liteFull, "full", false, "Print upstream's full text output (show/list print a compact form by default)")
+	rootCmd.PersistentFlags().StringSliceVar(&liteSections, "section", nil, "show: print the named '## section' in full (substring, repeatable)")
 	rootCmd.PersistentFlags().StringVar(&liteFields, "fields", "", "With --json: keep only these top-level fields (comma-separated)")
 }
 

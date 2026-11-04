@@ -16,7 +16,7 @@ func TestShowBoundedFor246KB(t *testing.T) {
 	for i := 0; i < 200; i++ {
 		cs = append(cs, &types.Comment{Author: "a", Text: big, CreatedAt: time.Now()})
 	}
-	out := Show(is, cs)
+	out := Show(is, cs, Options{})
 	if len(out) > MaxShowBytes {
 		t.Fatalf("show %d bytes > %d", len(out), MaxShowBytes)
 	}
@@ -29,7 +29,7 @@ func TestShowBoundedFor246KB(t *testing.T) {
 }
 
 func TestShowSmallUntouched(t *testing.T) {
-	out := Show(&types.Issue{ID: "x-2", Title: "hi", Description: "short"}, nil)
+	out := Show(&types.Issue{ID: "x-2", Title: "hi", Description: "short"}, nil, Options{})
 	if !strings.Contains(out, "short") || strings.Contains(out, "--full") {
 		t.Fatalf("unexpected: %q", out)
 	}
@@ -80,5 +80,35 @@ func TestSelectFields(t *testing.T) {
 	}
 	if _, err := SelectFields([]byte(`nope`), []string{"a"}); err == nil {
 		t.Fatal("want error")
+	}
+}
+
+func TestShowFoldedAndSection(t *testing.T) {
+	c := &types.Comment{Author: "qa", CreatedAt: time.Now(), Text: "Verdict: pass\n\nShip it.\n\n## Evidence\nsecret-evidence-line\nsecond\n\n## Next\nmerge"}
+	is := &types.Issue{ID: "x-3", Title: "t", Status: "open"}
+	out := Show(is, []*types.Comment{c}, Options{})
+	for _, want := range []string{"Verdict: pass", "Ship it.", "[+] Evidence (2 lines)", "[+] Next (1 lines)"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "secret-evidence-line") {
+		t.Fatalf("section text leaked:\n%s", out)
+	}
+	out = Show(is, []*types.Comment{c}, Options{Sections: []string{"evid"}})
+	if !strings.Contains(out, "secret-evidence-line") || !strings.Contains(out, "[+] Next") {
+		t.Fatalf("--section evid:\n%s", out)
+	}
+}
+
+func TestShowFlatUnchangedUpTo15Lines(t *testing.T) {
+	flat := strings.TrimSuffix(strings.Repeat("a long flat line of old text that is not short at all\n", 15), "\n")
+	out := Show(&types.Issue{ID: "x-4", Description: flat}, []*types.Comment{{Author: "a", Text: flat, CreatedAt: time.Now()}}, Options{})
+	if strings.Count(out, "a long flat line") != 30 || strings.Contains(out, "more lines") {
+		t.Fatalf("flat cut too early:\n%s", out)
+	}
+	out = Show(&types.Issue{ID: "x-4", Description: flat + "\nextra"}, nil, Options{})
+	if !strings.Contains(out, "... 1 more lines (--full)") {
+		t.Fatalf("no hint:\n%s", out)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/steveyegge/beads/internal/foldtext"
 	"github.com/steveyegge/beads/internal/types"
 )
 
@@ -20,15 +21,20 @@ const (
 	// MaxListLines is the hard ceiling for one rendered list, including hint lines.
 	MaxListLines = 50
 
-	fieldBytes   = 1200 // per long field (description, design, notes, acceptance)
-	commentBytes = 400  // per comment
-	maxComments  = 5    // newest comments shown
-	titleRunes   = 100  // list-line title width
+	flatLines   = 15   // flat (section-less) text prints whole up to this many lines
+	flatBytes   = 2000 // backstop for very long flat lines
+	maxComments = 5    // newest comments shown
+	titleRunes  = 100  // list-line title width
 )
 
 // Show renders one bead as compact text of at most MaxShowBytes bytes.
 // Long fields and older comments are cut with a hint naming --full.
-func Show(is *types.Issue, comments []*types.Comment) string {
+//
+// Text written in the folded format (title, lead, "## Name" sections) prints
+// its title, lead and one "[+] Name (N lines)" line per section; the sections
+// named in opts.Sections print in full. Flat text prints whole up to flatLines
+// lines, then a hint.
+func Show(is *types.Issue, comments []*types.Comment, opts Options) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s [P%d %s %s] %s\n", is.ID, is.Priority, is.IssueType, is.Status, oneLine(is.Title))
 	var meta []string
@@ -50,10 +56,10 @@ func Show(is *types.Issue, comments []*types.Comment) string {
 	if is.CloseReason != "" {
 		b.WriteString("close reason: " + cut(is.CloseReason, 300, "") + "\n")
 	}
-	section(&b, "DESCRIPTION", is.Description)
-	section(&b, "DESIGN", is.Design)
-	section(&b, "ACCEPTANCE", is.AcceptanceCriteria)
-	section(&b, "NOTES", is.Notes)
+	section(&b, "DESCRIPTION", is.Description, opts)
+	section(&b, "DESIGN", is.Design, opts)
+	section(&b, "ACCEPTANCE", is.AcceptanceCriteria, opts)
+	section(&b, "NOTES", is.Notes, opts)
 
 	if n := len(comments); n > 0 {
 		shown := comments
@@ -65,17 +71,54 @@ func Show(is *types.Issue, comments []*types.Comment) string {
 			fmt.Fprintf(&b, "(%d older comments hidden, use --full)\n", n-len(shown))
 		}
 		for _, c := range shown {
-			fmt.Fprintf(&b, "- %s %s: %s\n", day(c.CreatedAt), c.Author, cut(c.Text, commentBytes, ""))
+			fmt.Fprintf(&b, "- %s %s:\n%s\n", day(c.CreatedAt), c.Author, indent(fold(c.Text, opts)))
 		}
 	}
 	return clamp(b.String(), MaxShowBytes, "\n... (output cut at 8 KB, use --full)\n")
 }
 
-func section(b *strings.Builder, name, text string) {
+// Options selects which folded sections Show prints in full.
+type Options struct {
+	Sections []string // --section values (substring, case-insensitive)
+}
+
+func section(b *strings.Builder, name, text string, opts Options) {
 	if strings.TrimSpace(text) == "" {
 		return
 	}
-	fmt.Fprintf(b, "\n%s\n%s\n", name, cut(strings.TrimSpace(text), fieldBytes, " ... (cut, use --full)"))
+	fmt.Fprintf(b, "\n%s\n%s\n", name, fold(text, opts))
+}
+
+// fold renders one text value (field or comment) in the compact form.
+func fold(text string, opts Options) string {
+	text = strings.TrimSpace(text)
+	d := foldtext.Parse(text)
+	if d.Flat {
+		lines := strings.Split(text, "\n")
+		if len(lines) <= flatLines {
+			return cut(text, flatBytes, " ... (cut, use --full)")
+		}
+		return cut(strings.Join(lines[:flatLines], "\n"), flatBytes, " ...") + fmt.Sprintf("\n... %d more lines (--full)", len(lines)-flatLines)
+	}
+	var out []string
+	if d.Title != "" {
+		out = append(out, d.Title)
+	}
+	if d.Lead != "" {
+		out = append(out, d.Lead)
+	}
+	for _, s := range d.Sections {
+		if s.Match(opts.Sections) {
+			out = append(out, "## "+s.Name, s.Body)
+		} else {
+			out = append(out, fmt.Sprintf("[+] %s (%d lines)", s.Name, foldtext.Lines(s.Body)))
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func indent(s string) string {
+	return "  " + strings.ReplaceAll(s, "\n", "\n  ")
 }
 
 // List renders one line per bead, at most MaxListLines lines in total. total is
