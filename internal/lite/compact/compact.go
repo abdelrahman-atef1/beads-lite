@@ -39,6 +39,10 @@ const (
 // named in opts.Sections print in full. Flat text prints whole up to flatLines
 // lines, then a hint.
 func Show(is *types.Issue, comments []*types.Comment, opts Options) string {
+	hits := 0
+	if len(opts.Sections) > 0 {
+		opts.hits = &hits
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s [P%d %s %s] %s\n", is.ID, is.Priority, is.IssueType, is.Status, oneLine(is.Title))
 	var meta []string
@@ -79,12 +83,22 @@ func Show(is *types.Issue, comments []*types.Comment, opts Options) string {
 			fmt.Fprintf(&b, "- #%d %s %s:\n%s\n", idx, day(c.CreatedAt), c.Author, indent(FoldComment(c.Text, idx, is.ID, opts)))
 		}
 	}
+	if len(opts.Sections) > 0 && hits == 0 {
+		fmt.Fprintf(&b, "\nNo section matches %q (sections are the '## Name' headings; see the [+] lines above)\n", strings.Join(opts.Sections, ", "))
+	}
 	return clamp(b.String(), MaxShowBytes, "\n... (output cut at 8 KB, use --full)\n")
 }
 
 // Options selects which folded sections Show prints in full.
 type Options struct {
 	Sections []string // --section values (substring, case-insensitive)
+	hits     *int     // counts sections printed because of Sections
+}
+
+func (o Options) hit() {
+	if o.hits != nil {
+		*o.hits++
+	}
 }
 
 func section(b *strings.Builder, name, text string, opts Options) {
@@ -107,8 +121,8 @@ func FoldComment(text string, idx int, id string, opts ...Options) string {
 	if len(opts) > 0 {
 		o = opts[0]
 	}
-	if !foldtext.Parse(text).Flat {
-		return fold(text, o)
+	if d := foldtext.Parse(text); !d.Flat {
+		return foldSectionedComment(d, idx, id, o)
 	}
 	rs := []rune(text)
 	if len(rs) <= commentWhole {
@@ -124,6 +138,50 @@ func FoldComment(text string, idx int, id string, opts ...Options) string {
 	tail := strings.Join(strings.Fields(string(rs[len(rs)-commentTail:])), " ")
 	return fmt.Sprintf("%s [... %d lines, %d ch; bd comments %s --n %d]\n... %s",
 		head, strings.Count(text, "\n")+1, len(rs), id, idx, tail)
+}
+
+// openSections are the section names a sectioned comment prints in full in the
+// default view: the reader needs the verdict and the next step without a second
+// command. Each is capped at openLines lines; the rest is folded with a hint.
+var openSections = []string{"verdict", "next"}
+
+const openLines = 8
+
+// foldSectionedComment: title, lead, Verdict and Next in full (capped), other
+// sections as "[+] Name (N lines)", then one line with the exact command that
+// opens a folded section.
+func foldSectionedComment(d foldtext.Doc, idx int, id string, opts Options) string {
+	var out []string
+	if d.Title != "" {
+		out = append(out, d.Title)
+	}
+	if d.Lead != "" {
+		out = append(out, d.Lead)
+	}
+	first := ""
+	for _, s := range d.Sections {
+		switch {
+		case s.Match(opts.Sections):
+			opts.hit()
+			out = append(out, "## "+s.Name, s.Body)
+		case s.Match(openSections):
+			lines := strings.Split(s.Body, "\n")
+			body := s.Body
+			if len(lines) > openLines {
+				body = strings.Join(lines[:openLines], "\n") + fmt.Sprintf("\n... %d more lines", len(lines)-openLines)
+			}
+			out = append(out, "## "+s.Name, body)
+		default:
+			if first == "" {
+				first = s.Name
+			}
+			out = append(out, fmt.Sprintf("[+] %s (%d lines)", s.Name, foldtext.Lines(s.Body)))
+		}
+	}
+	if first != "" {
+		out = append(out, fmt.Sprintf("(open: bd comments %s --n %d --section %q)", id, idx, first))
+	}
+	return strings.Join(out, "\n")
 }
 
 // fold renders one text value (field) in the compact form.
@@ -146,6 +204,7 @@ func fold(text string, opts Options) string {
 	}
 	for _, s := range d.Sections {
 		if s.Match(opts.Sections) {
+			opts.hit()
 			out = append(out, "## "+s.Name, s.Body)
 		} else {
 			out = append(out, fmt.Sprintf("[+] %s (%d lines)", s.Name, foldtext.Lines(s.Body)))

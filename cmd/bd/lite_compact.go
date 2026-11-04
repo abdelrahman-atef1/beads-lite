@@ -70,8 +70,8 @@ func liteCommentsQuery(cmd *cobra.Command, id string, cmts []*types.Comment) (bo
 		}
 		q.Since = t
 	}
-	if q.Last < 0 || q.N < 0 {
-		return true, fmt.Errorf("--last and --n must be positive")
+	if (cmd.Flags().Changed("last") && q.Last < 1) || (cmd.Flags().Changed("n") && q.N < 1) {
+		return true, fmt.Errorf("--last and --n must be 1 or more")
 	}
 	if !q.Active() {
 		return false, nil

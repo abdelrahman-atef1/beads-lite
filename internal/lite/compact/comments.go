@@ -105,6 +105,9 @@ func Comments(id string, cmts []*types.Comment, q Query) (string, error) {
 		}
 	}
 	if b.Len() == 0 {
+		if len(q.Sections) > 0 {
+			return fmt.Sprintf("No section matching %q in the selected comments of %s\n", strings.Join(q.Sections, ", "), id), nil
+		}
 		return fmt.Sprintf("No comments on %s match\n", id), nil
 	}
 	if hidden > 0 {

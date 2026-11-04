@@ -87,7 +87,7 @@ func TestShowFoldedAndSection(t *testing.T) {
 	c := &types.Comment{Author: "qa", CreatedAt: time.Now(), Text: "Verdict: pass\n\nShip it.\n\n## Evidence\nsecret-evidence-line\nsecond\n\n## Next\nmerge"}
 	is := &types.Issue{ID: "x-3", Title: "t", Status: "open"}
 	out := Show(is, []*types.Comment{c}, Options{})
-	for _, want := range []string{"Verdict: pass", "Ship it.", "[+] Evidence (2 lines)", "[+] Next (1 lines)"} {
+	for _, want := range []string{"Verdict: pass", "Ship it.", "[+] Evidence (2 lines)", "merge"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q:\n%s", want, out)
 		}
@@ -96,7 +96,7 @@ func TestShowFoldedAndSection(t *testing.T) {
 		t.Fatalf("section text leaked:\n%s", out)
 	}
 	out = Show(is, []*types.Comment{c}, Options{Sections: []string{"evid"}})
-	if !strings.Contains(out, "secret-evidence-line") || !strings.Contains(out, "[+] Next") {
+	if !strings.Contains(out, "secret-evidence-line") || !strings.Contains(out, "## Next") {
 		t.Fatalf("--section evid:\n%s", out)
 	}
 }

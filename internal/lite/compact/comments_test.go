@@ -124,3 +124,30 @@ func TestParseSince(t *testing.T) {
 		t.Fatal("Active")
 	}
 }
+
+func TestSectionedCommentOpensVerdictAndNext(t *testing.T) {
+	txt := "Ruling.\n## Policy\nA\nB\n## Verdict\nFAIL on item three\n## Next\nswe fixes item three"
+	got := FoldComment(txt, 4, "x-1")
+	for _, want := range []string{"FAIL on item three", "swe fixes item three", "[+] Policy (2 lines)", `bd comments x-1 --n 4 --section "Policy"`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %q", want, got)
+		}
+	}
+	if strings.Contains(FoldComment("T\n## Verdict\nok", 1, "x-1"), "(open:") {
+		t.Fatal("no hint when nothing is folded")
+	}
+}
+
+func TestShowSectionNoMatchSaysSo(t *testing.T) {
+	is := &types.Issue{ID: "x-1", Title: "t", Description: "T\n## Evidence\na"}
+	if out := Show(is, nil, Options{Sections: []string{"zzzz"}}); !strings.Contains(out, `No section matches "zzzz"`) {
+		t.Fatalf("%s", out)
+	}
+	if out := Show(is, nil, Options{Sections: []string{"evid"}}); strings.Contains(out, "No section matches") || !strings.Contains(out, "## Evidence") {
+		t.Fatalf("%s", out)
+	}
+	out, _ := Comments("x-1", sample(), Query{Sections: []string{"zzzz"}})
+	if !strings.Contains(out, "No section matching") {
+		t.Fatalf("%s", out)
+	}
+}
