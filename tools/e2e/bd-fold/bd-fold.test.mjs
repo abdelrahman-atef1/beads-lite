@@ -116,11 +116,8 @@ test("S12 section edge cases don't crash / lose text", () => {
 test("S13 flat fields: every base line is a prefix of a new line (nothing reordered/dropped; only less cut), max 15 lines/field", () => {
   const bad = [];
   for (const id of realIds(60)) {
-    const nH = nw(["show", id]).out.split("
-COMMENTS")[0].split("
-"), bH = ol(["show", id]).out.split("
-COMMENTS")[0].split("
-");
+    const head = (o) => o.split("\nCOMMENTS")[0].split("\n");
+    const nH = head(nw(["show", id]).out), bH = head(ol(["show", id]).out);
     if (bH.some((l) => /^## /.test(l))) continue;
     for (const l of bH) if (l && !nH.some((x) => x.startsWith(l))) { bad.push(id + ": " + l.slice(0, 50)); break; }
   }
