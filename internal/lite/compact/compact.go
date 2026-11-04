@@ -23,8 +23,12 @@ const (
 
 	flatLines   = 15   // flat (section-less) text prints whole up to this many lines
 	flatBytes   = 2000 // backstop for very long flat lines
-	maxComments = 5    // newest comments shown
+	maxComments = 3    // newest comments shown
 	titleRunes  = 100  // list-line title width
+
+	commentWhole = 200 // flat comments up to this many runes print whole
+	commentHead  = 80  // longer ones: first line cut to this
+	commentTail  = 140 // ... plus this many trailing runes
 )
 
 // Show renders one bead as compact text of at most MaxShowBytes bytes.
@@ -68,10 +72,11 @@ func Show(is *types.Issue, comments []*types.Comment, opts Options) string {
 		}
 		fmt.Fprintf(&b, "\nCOMMENTS (%d)\n", n)
 		if n > len(shown) {
-			fmt.Fprintf(&b, "(%d older comments hidden, use --full)\n", n-len(shown))
+			fmt.Fprintf(&b, "(%d older, bd comments %s --titles)\n", n-len(shown), is.ID)
 		}
-		for _, c := range shown {
-			fmt.Fprintf(&b, "- %s %s:\n%s\n", day(c.CreatedAt), c.Author, indent(fold(c.Text, opts)))
+		for i, c := range shown {
+			idx := n - len(shown) + i + 1
+			fmt.Fprintf(&b, "- #%d %s %s:\n%s\n", idx, day(c.CreatedAt), c.Author, indent(FoldComment(c.Text, idx, is.ID, opts)))
 		}
 	}
 	return clamp(b.String(), MaxShowBytes, "\n... (output cut at 8 KB, use --full)\n")
@@ -89,7 +94,39 @@ func section(b *strings.Builder, name, text string, opts Options) {
 	fmt.Fprintf(b, "\n%s\n%s\n", name, fold(text, opts))
 }
 
-// fold renders one text value (field or comment) in the compact form.
+// FoldComment renders one comment in the compact form (the one fold used by
+// show and by the comments flags). Sectioned text (## Name) prints title, lead
+// and section names. Flat text of at most commentWhole runes prints whole;
+// longer flat text prints its first line (cut), a marker with line and char
+// counts and the command that prints the whole comment, then the last
+// commentTail runes (where the verdict and signature sit).
+// idx is the 1-based comment number (oldest = 1).
+func FoldComment(text string, idx int, id string, opts ...Options) string {
+	text = strings.TrimSpace(text)
+	var o Options
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	if !foldtext.Parse(text).Flat {
+		return fold(text, o)
+	}
+	rs := []rune(text)
+	if len(rs) <= commentWhole {
+		return text
+	}
+	head := ""
+	for _, l := range strings.Split(text, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			head = cutRunes(l, commentHead)
+			break
+		}
+	}
+	tail := strings.Join(strings.Fields(string(rs[len(rs)-commentTail:])), " ")
+	return fmt.Sprintf("%s [... %d lines, %d ch; bd comments %s --n %d]\n... %s",
+		head, strings.Count(text, "\n")+1, len(rs), id, idx, tail)
+}
+
+// fold renders one text value (field) in the compact form.
 func fold(text string, opts Options) string {
 	text = strings.TrimSpace(text)
 	d := foldtext.Parse(text)

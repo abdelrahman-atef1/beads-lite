@@ -53,6 +53,13 @@ func runCommentsProxiedServer(cmd *cobra.Command, ctx context.Context, args []st
 		return nil
 	}
 
+	if handled, err := liteCommentsQuery(cmd, issueID, comments); handled {
+		if err != nil {
+			return HandleErrorRespectJSON("%v", err)
+		}
+		return nil
+	}
+
 	fmt.Printf("\nComments on %s:\n\n", issueID)
 	for _, comment := range comments {
 		ts := comment.CreatedAt

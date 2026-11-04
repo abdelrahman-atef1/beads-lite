@@ -20,7 +20,7 @@ func TestShowBoundedFor246KB(t *testing.T) {
 	if len(out) > MaxShowBytes {
 		t.Fatalf("show %d bytes > %d", len(out), MaxShowBytes)
 	}
-	if !strings.Contains(out, "195 older comments hidden, use --full") {
+	if !strings.Contains(out, "197 older, bd comments x-1 --titles") {
 		t.Fatalf("missing hint:\n%s", out)
 	}
 	if !strings.HasPrefix(out, "x-1 [P0 ") {
@@ -103,8 +103,8 @@ func TestShowFoldedAndSection(t *testing.T) {
 
 func TestShowFlatUnchangedUpTo15Lines(t *testing.T) {
 	flat := strings.TrimSuffix(strings.Repeat("a long flat line of old text that is not short at all\n", 15), "\n")
-	out := Show(&types.Issue{ID: "x-4", Description: flat}, []*types.Comment{{Author: "a", Text: flat, CreatedAt: time.Now()}}, Options{})
-	if strings.Count(out, "a long flat line") != 30 || strings.Contains(out, "more lines") {
+	out := Show(&types.Issue{ID: "x-4", Description: flat}, nil, Options{})
+	if strings.Count(out, "a long flat line") != 15 || strings.Contains(out, "more lines") {
 		t.Fatalf("flat cut too early:\n%s", out)
 	}
 	out = Show(&types.Issue{ID: "x-4", Description: flat + "\nextra"}, nil, Options{})

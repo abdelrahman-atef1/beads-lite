@@ -130,6 +130,13 @@ Examples:
 			return nil
 		}
 
+		if handled, err := liteCommentsQuery(cmd, issueID, comments); handled {
+			if err != nil {
+				return HandleErrorRespectJSON("%v", err)
+			}
+			return nil
+		}
+
 		fmt.Printf("\nComments on %s:\n\n", issueID)
 		for _, comment := range comments {
 			ts := comment.CreatedAt
@@ -296,6 +303,7 @@ func addCommentDirect(ctx context.Context, st storage.DoltStorage, issueID, auth
 func init() {
 	commentsCmd.AddCommand(commentsMisplacedListCmd)
 	commentsCmd.AddCommand(commentsAddCmd)
+	addLiteCommentsFlags(commentsCmd)
 	commentsCmd.Flags().Bool("local-time", false, "Show timestamps in local time instead of UTC")
 	commentsAddCmd.Flags().StringP("file", "f", "", "Read comment text from file")
 	commentsAddCmd.Flags().StringP("author", "a", "", "Add author to comment")

@@ -21,11 +21,20 @@ for (const it of list) {
 cand.sort((x, y) => y.w - x.w);
 let tot = { def: 0, full: 0 };
 const rows = [];
+let vOk = 0, vN = 0;
+const norm = (x) => x.split(/\s+/).filter(Boolean).join(' ');
 for (const c of cand.slice(0, n)) {
   const def = Buffer.byteLength(run(["show", c.id])), full = Buffer.byteLength(run(["show", c.id, "--full"]));
+  if (vN < 10) {
+    const j = JSON.parse(run(["show", c.id, "--json", "--full", "--include-comments"]));
+    const cs = (Array.isArray(j) ? j[0] : j).comments || [];
+    const out = norm(run(["show", c.id]));
+    for (const k of cs.slice(-3)) { const t = norm(k.text || ""); if (/^##? /m.test(k.text || "")) continue; vN++; if (out.includes([...t].slice(-60).join(""))) vOk++; }
+  }
   tot.def += def; tot.full += full;
   rows.push(`${c.id}\tdefault ${Math.round(def / 4)} tok\tfull ${Math.round(full / 4)} tok`);
 }
 console.log(`[${label}] bd=${bd} beads=${rows.length}`);
 console.log(rows.join("\n"));
+console.log(`verdict tails shown: ${vOk}/${vN}; max bead default ${Math.round(Math.max(...rows.map((r) => +r.match(/default (\d+)/)[1])))} tok`);
 console.log(`TOTAL default ${Math.round(tot.def / 4)} tok, full ${Math.round(tot.full / 4)} tok, default/full ${(tot.def / tot.full * 100).toFixed(1)}%`);
