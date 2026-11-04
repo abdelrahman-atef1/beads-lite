@@ -44,3 +44,9 @@ must never lose a verdict or a "Next:" line). Mapping to tests comes in a later 
 - R03 Moved-id hint (`bd show <old-id>` says "moved to ...").
 - R04 `bd comments <id>` of a long Arabic comment is unchanged vs production.
 - R05 Wall time of `bd show` not slower than production by more than 100 ms on a 1000-bead copy.
+
+## Mapping (added after the cases; tools/e2e/bd-fold/bd-fold.test.mjs, tokens.mjs, scan-sections.mjs)
+Each case id above is a `test("<id> ...")` of the same id in bd-fold.test.mjs. S17 = tokens.mjs (20 beads by sha1 seed). Section-verdict frequency = scan-sections.mjs.
+Result 2026-11-04 on 422069e2c: 26/28 groups pass; FAIL S02 (silent no-match), S16 (verdict/Next of sectioned comment hidden).
+NOT COVERED: proxied-server path of comments, Dolt backend, writes against live dbs.
+Manual (read-only, ~/company): R03 moved-id hint, also with `comments --titles`: PASS.
