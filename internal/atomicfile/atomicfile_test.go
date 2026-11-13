@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestWriteFile_Basic(t *testing.T) {
@@ -277,5 +278,33 @@ func TestConcurrentWriters_NoCorruption(t *testing.T) {
 				t.Fatalf("line %d byte %d: got %c, expected %c (interleaved writers)", i, j, b, firstChar)
 			}
 		}
+	}
+}
+
+func TestCreate_SweepsStaleTemps(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "issues.jsonl")
+	stale := filepath.Join(dir, ".~issues.jsonl.111")
+	fresh := filepath.Join(dir, ".~issues.jsonl.222")
+	other := filepath.Join(dir, ".~other.jsonl.333")
+	for _, p := range []string{stale, fresh, other} {
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	_ = os.Chtimes(stale, old, old)
+	_ = os.Chtimes(other, old, old)
+	if err := WriteFile(target, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Error("stale temp of same target should be removed")
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Error("fresh temp (maybe a live writer) must stay")
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Error("another target's temp must stay")
 	}
 }

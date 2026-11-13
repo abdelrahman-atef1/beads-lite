@@ -53,6 +53,9 @@ export-state/
 export-state.json
 last_pull
 
+# Atomic-write temp files left by a killed export (internal/atomicfile)
+.~*
+
 # Ephemeral store (SQLite - wisps/molecules, intentionally not versioned)
 ephemeral.sqlite3
 ephemeral.sqlite3-journal
@@ -121,6 +124,7 @@ var requiredPatterns = []string{
 	"export-state/",
 	"export-state.json",
 	"last_pull",
+	".~*",
 	"dolt/",
 	"embeddeddolt/",
 	"proxieddb/",
