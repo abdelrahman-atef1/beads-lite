@@ -1155,6 +1155,13 @@ var rootCmd = &cobra.Command{
 			}
 		}
 
+		// Same check for the env spellings of --db (a typo must not reach an ancestor store).
+		if !cmd.Root().PersistentFlags().Changed("db") && (cmd.Name() != "init" || cmd.Parent() != cmd.Root()) {
+			if vErr := validateEnvDB(); vErr != nil {
+				return HandleError("%v", vErr)
+			}
+		}
+
 		if !cmd.Root().PersistentFlags().Changed("db") && dbPath == "" &&
 			os.Getenv("BEADS_DB") == "" && os.Getenv("BD_DB") == "" && os.Getenv("BEADS_DIR") == "" {
 			dbPath = config.GetString("db")

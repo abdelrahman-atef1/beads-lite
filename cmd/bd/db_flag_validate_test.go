@@ -62,3 +62,32 @@ func TestValidateExplicitDBFlag(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateEnvDB(t *testing.T) {
+	root := t.TempDir()
+	good := filepath.Join(root, "good.db")
+	if err := os.WriteFile(good, append([]byte("SQLite format 3\x00"), make([]byte, 32)...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"BEADS_DB", "BD_DB"} {
+		t.Setenv("BEADS_DB", "")
+		t.Setenv("BD_DB", "")
+		if err := validateEnvDB(); err != nil {
+			t.Errorf("unset must pass: %v", err)
+		}
+		t.Setenv(key, good)
+		if err := validateEnvDB(); err != nil {
+			t.Errorf("%s good: %v", key, err)
+		}
+		t.Setenv(key, filepath.Join(root, "typo", "x.db"))
+		if err := validateEnvDB(); err == nil || !strings.Contains(err.Error(), "database not found") {
+			t.Errorf("%s missing: %v", key, err)
+		}
+		txt := filepath.Join(root, "n.txt")
+		_ = os.WriteFile(txt, []byte("not a db at all, just text"), 0o600)
+		t.Setenv(key, txt)
+		if err := validateEnvDB(); err == nil {
+			t.Errorf("%s non-store must fail", key)
+		}
+	}
+}

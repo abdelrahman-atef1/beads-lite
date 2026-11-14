@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	dbidentifier "github.com/steveyegge/beads/internal/storage/domain/db"
 )
 
 // validateExplicitDBFlag (beads-lite-1bo5.12): an explicit --db must name an
@@ -45,6 +47,24 @@ func validateExplicitDBFlag(p string) error {
 	head := make([]byte, 16)
 	if _, err := io.ReadFull(f, head); err != nil || !bytes.Equal(head, []byte("SQLite format 3\x00")) {
 		return fmt.Errorf("--db %q: not a beads database (not a SQLite file)", p)
+	}
+	return nil
+}
+
+// validateEnvDB applies validateExplicitDBFlag to BEADS_DB / BD_DB when set.
+// A bare database name (proxied-server override) that is not a path is left alone.
+func validateEnvDB() error {
+	for _, key := range []string{"BEADS_DB", "BD_DB"} {
+		v := os.Getenv(key)
+		if v == "" {
+			continue
+		}
+		if _, err := os.Stat(v); err != nil && os.IsNotExist(err) && dbidentifier.ValidateIdentifier(v) == nil {
+			continue
+		}
+		if err := validateExplicitDBFlag(v); err != nil {
+			return fmt.Errorf("%s: %w", key, err)
+		}
 	}
 	return nil
 }
