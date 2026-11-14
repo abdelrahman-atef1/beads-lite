@@ -12,7 +12,31 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
+
+// staleTempAge is how old a leftover ".~<base>.*" temp file must be before
+// Create deletes it. A process killed between CreateTemp and Close (common
+// for fire-and-forget auto-export on Windows) leaves one behind forever.
+const staleTempAge = time.Hour
+
+// sweepStale removes abandoned temp files of the same target. Best effort.
+func sweepStale(dir, base string) {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	prefix := ".~" + base + "."
+	for _, e := range ents {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), prefix) {
+			continue
+		}
+		if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > staleTempAge {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
+}
 
 // WriteFile atomically writes data to path with the given permissions.
 // It creates an atomic Writer, copies data in via io.Copy, then
@@ -46,6 +70,7 @@ func Create(path string, perm os.FileMode) (*Writer, error) {
 	dir := filepath.Dir(path)
 	base := filepath.Base(path)
 
+	sweepStale(dir, base)
 	f, err := os.CreateTemp(dir, ".~"+base+".")
 	if err != nil {
 		return nil, fmt.Errorf("atomicfile: create temp: %w", err)
