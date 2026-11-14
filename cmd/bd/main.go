@@ -1147,6 +1147,13 @@ var rootCmd = &cobra.Command{
 		if cmd.Name() != "init" && cmd.Root().PersistentFlags().Changed("db") {
 			dbPath = absoluteExistingDBFlag(dbPath)
 		}
+		// beads-lite-1bo5.12: an explicit --db must be an existing beads store.
+		// Only the root "init" may name a new path ("backup init" is not it).
+		if cmd.Root().PersistentFlags().Changed("db") && dbPath != "" && (cmd.Name() != "init" || cmd.Parent() != cmd.Root()) {
+			if vErr := validateExplicitDBFlag(dbPath); vErr != nil {
+				return HandleError("%v", vErr)
+			}
+		}
 
 		if !cmd.Root().PersistentFlags().Changed("db") && dbPath == "" &&
 			os.Getenv("BEADS_DB") == "" && os.Getenv("BD_DB") == "" && os.Getenv("BEADS_DIR") == "" {
