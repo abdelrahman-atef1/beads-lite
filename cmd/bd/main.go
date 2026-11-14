@@ -764,6 +764,22 @@ func refreshBoundCommandConfig(cmd *cobra.Command) {
 	}
 }
 
+// absoluteExistingDBFlag returns an existing relative --db path as an absolute
+// one (beads-lite-1bo5.11). Anything else (empty, absolute, not on disk, e.g. a
+// bare database name) is returned unchanged.
+func absoluteExistingDBFlag(p string) string {
+	if p == "" || filepath.IsAbs(p) {
+		return p
+	}
+	if _, err := os.Stat(p); err != nil {
+		return p
+	}
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
+}
+
 // resolveCommandBeadsDir maps a discovered Dolt data path back to the owning
 // .beads directory. filepath.Dir(dbPath) only works when the Dolt data lives
 // under .beads/dolt; custom dolt_data_dir values can place it elsewhere.
@@ -1122,6 +1138,14 @@ var rootCmd = &cobra.Command{
 				dbNameFromDBFlag = dbPath
 				dbPath = ""
 			}
+		}
+
+		// beads-lite-1bo5.11: a relative --db is made absolute here, once,
+		// against the invocation directory. Every later step (beads-dir
+		// resolution, ancestor walk, workspace guard) then sees the same path
+		// and cannot fall back to the nearest .beads of the cwd.
+		if cmd.Name() != "init" && cmd.Root().PersistentFlags().Changed("db") {
+			dbPath = absoluteExistingDBFlag(dbPath)
 		}
 
 		if !cmd.Root().PersistentFlags().Changed("db") && dbPath == "" &&

@@ -59,7 +59,7 @@ func MaybeExec() {
 	if os.Getenv(EnvActive) != "" || LocalCommand(args) {
 		return
 	}
-	dir, ok := FindBeadsDir(cwd, os.Getenv("BEADS_DIR"))
+	dir, ok := TargetBeadsDir(cwd, os.Getenv("BEADS_DIR"), args)
 	if !ok || !IsEmbeddedDolt(dir) {
 		return
 	}
@@ -82,6 +82,65 @@ func MaybeExec() {
 		return
 	}
 	ExitFunc(code)
+}
+
+// TargetBeadsDir is FindBeadsDir for the store the call will really open
+// (beads-lite-1bo5.11): -C/--directory moves the start folder and --db names
+// the store outright, and both win over the cwd and BEADS_DIR exactly as they
+// do inside bd. Without this a "--db <copy>" call was routed by the nearest
+// project instead of by the copy. A --db value that holds no metadata.json
+// within three levels (e.g. a bare Dolt database name) falls back to the
+// folder-based answer.
+func TargetBeadsDir(cwd, envDir string, args []string) (string, bool) {
+	var db, chdir string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		val := func(long string, short string) (string, bool) {
+			switch {
+			case a == long || (short != "" && a == short):
+				if i+1 < len(args) {
+					i++
+					return args[i], true
+				}
+			case strings.HasPrefix(a, long+"="):
+				return strings.TrimPrefix(a, long+"="), true
+			}
+			return "", false
+		}
+		if v, ok := val("--db", ""); ok {
+			db = v
+		} else if v, ok := val("--directory", "-C"); ok {
+			chdir = v
+		}
+	}
+	start := cwd
+	if chdir != "" {
+		start = chdir
+		if !filepath.IsAbs(start) {
+			start = filepath.Join(cwd, start)
+		}
+	}
+	if db != "" {
+		p := db
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(start, p)
+		}
+		p = filepath.Clean(p)
+		d := p
+		for n := 0; n < 4 && d != filepath.Dir(d); n++ {
+			if st, err := os.Stat(filepath.Join(d, "metadata.json")); err == nil && !st.IsDir() {
+				return d, true
+			}
+			d = filepath.Dir(d)
+		}
+	}
+	if chdir != "" {
+		return FindBeadsDir(start, "")
+	}
+	return FindBeadsDir(start, envDir)
 }
 
 // LocalCommand reports whether the first non-flag argument is a fork-only command.

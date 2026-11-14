@@ -251,3 +251,34 @@ func TestFindBeadsDirUsesMainTreeFromWorktree(t *testing.T) {
 		t.Fatalf("BEADS_DIR must win: %q", d)
 	}
 }
+
+// beads-lite-1bo5.11: --db and -C pick the store the call opens, so they pick
+// the route too; the nearest project must not.
+func TestTargetBeadsDirHonoursDBAndChdir(t *testing.T) {
+	live := mk(t, `{"backend":"dolt"}`)                // cwd project: embedded Dolt
+	copyp := mk(t, `{"backend":"sqlite"}`, "beads.db") // the copy the caller names
+	liveB, copyB := filepath.Join(live, ".beads"), filepath.Join(copyp, ".beads")
+	rel, _ := filepath.Rel(live, filepath.Join(copyB, "beads.db"))
+	cases := map[string][]string{
+		"abs db file": {"--db", filepath.Join(copyB, "beads.db"), "recompute-blocked"},
+		"abs db dir":  {"recompute-blocked", "--db=" + copyB},
+		"rel db file": {"--db", rel, "recompute-blocked"},
+		"-C":          {"-C", copyp, "recompute-blocked"},
+		"--directory": {"--directory=" + copyp, "recompute-blocked"},
+	}
+	for name, args := range cases {
+		got, ok := TargetBeadsDir(live, "", args)
+		if !ok || filepath.Clean(got) != filepath.Clean(copyB) {
+			t.Errorf("%s: got %q %v, want %q", name, got, ok, copyB)
+		}
+		if IsEmbeddedDolt(got) {
+			t.Errorf("%s: a sqlite copy must not be routed to upstream", name)
+		}
+	}
+	if got, _ := TargetBeadsDir(live, "", []string{"list"}); got != liveB {
+		t.Errorf("no flag: got %q want %q", got, liveB)
+	}
+	if got, _ := TargetBeadsDir(live, "", []string{"--db", "plainname", "list"}); got != liveB {
+		t.Errorf("bare db name must fall back to the cwd project, got %q", got)
+	}
+}
